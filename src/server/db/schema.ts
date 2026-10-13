@@ -37,6 +37,9 @@ export const users = pgTable("users", {
   passwordHash: text("password_hash").notNull(),
   role: text("role", { enum: ["member", "admin"] }).notNull().default("member"),
   emailVerifiedAt: ts("email_verified_at"),
+  referralCode: text("referral_code").unique(),
+  referredByUserId: text("referred_by_user_id"),
+  referralLockedAt: ts("referral_locked_at"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
@@ -160,6 +163,76 @@ export const accessPasses = pgTable(
   },
   (t) => [index("access_passes_user_idx").on(t.userId)],
 );
+
+export const referralFees = pgTable(
+  "referral_fees",
+  {
+    id: id(),
+    referrerUserId: text("referrer_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    referredUserId: text("referred_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    paymentKey: text("payment_key").notNull().unique(),
+    amountCents: integer("amount_cents").notNull(),
+    voidedCents: integer("voided_cents").notNull().default(0),
+    referrerTier: text("referrer_tier", { enum: TIERS }).notNull(),
+    customerTier: text("customer_tier", { enum: TIERS }).notNull(),
+    cappedTier: text("capped_tier", { enum: TIERS }).notNull(),
+    customerEmail: text("customer_email").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("referral_fees_referrer_user_idx").on(t.referrerUserId)],
+);
+
+export const referralAdjustments = pgTable("referral_adjustments", {
+  id: id(),
+  feeId: text("fee_id")
+    .notNull()
+    .references(() => referralFees.id),
+  externalId: text("external_id").notNull().unique(),
+  amountCents: integer("amount_cents").notNull(),
+  voidedCents: integer("voided_cents").notNull().default(0),
+  createdAt: createdAt(),
+});
+
+export const referralWithdrawals = pgTable(
+  "referral_withdrawals",
+  {
+    id: id(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    amountCents: integer("amount_cents").notNull(),
+    status: text("status", { enum: ["pending", "sent", "rejected"] }).notNull(),
+    requestedAt: ts("requested_at").notNull().defaultNow(),
+    resolvedAt: ts("resolved_at"),
+    resolvedByUserId: text("resolved_by_user_id"),
+  },
+  (t) => [index("referral_withdrawals_user_idx").on(t.userId)],
+);
+
+export const referralAllocations = pgTable("referral_allocations", {
+  id: id(),
+  withdrawalId: text("withdrawal_id")
+    .notNull()
+    .references(() => referralWithdrawals.id),
+  feeId: text("fee_id")
+    .notNull()
+    .references(() => referralFees.id),
+  amountCents: integer("amount_cents").notNull(),
+});
+
+export const referralPayoutAccounts = pgTable("referral_payout_accounts", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  accountHolderName: text("account_holder_name").notNull(),
+  routingEncrypted: text("routing_encrypted").notNull(),
+  accountEncrypted: text("account_encrypted").notNull(),
+  updatedAt: updatedAt(),
+});
 
 /* ------------------------------------------------------------------ */
 /* Sources and raw evidence                                            */
