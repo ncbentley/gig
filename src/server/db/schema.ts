@@ -142,6 +142,25 @@ export const complimentaryGrants = pgTable("complimentary_grants", {
   updatedAt: updatedAt(),
 });
 
+export const accessPasses = pgTable(
+  "access_passes",
+  {
+    id: id(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    amountCents: integer("amount_cents").notNull(),
+    currency: text("currency").notNull().default("usd"),
+    status: text("status", { enum: ["paid", "refunded"] }).notNull(),
+    provider: text("provider", { enum: ["stripe", "mock"] }).notNull(),
+    providerPaymentId: text("provider_payment_id").notNull().unique(),
+    startsAt: ts("starts_at").notNull(),
+    endsAt: ts("ends_at").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("access_passes_user_idx").on(t.userId)],
+);
+
 /* ------------------------------------------------------------------ */
 /* Sources and raw evidence                                            */
 /* ------------------------------------------------------------------ */

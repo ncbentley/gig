@@ -148,6 +148,13 @@
       "when": 1792368000000,
       "tag": "0020_monthly_prices",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1792454400000,
+      "tag": "0021_access_passes",
+      "breakpoints": true
     }
   ]
 }
