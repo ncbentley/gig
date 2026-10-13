@@ -3,7 +3,8 @@ import { cache } from "react";
 import { getCurrentUser } from "@/server/auth";
 import { getEntitledSubscription } from "@/server/billing/service";
 import { getDb } from "@/server/db";
-import { tierEntitlements, TIERS, type Tier, type User } from "@/server/db/schema";
+import { and, desc, eq } from "drizzle-orm";
+import { accessPasses, tierEntitlements, TIERS, type Tier, type User } from "@/server/db/schema";
 import { ANONYMOUS, buildAccess, type Access } from "./access";
 import { ALL_FEATURES, DEFAULT_TIER_CONFIG, type Feature, type TierConfig } from "./config";
 import { getComplimentaryTier } from "./grants";
@@ -36,8 +37,25 @@ export async function accessForUser(user: User | null, config?: Record<Tier, Tie
   const cfg = config ?? (await getTierConfig());
   if (!user) return ANONYMOUS;
   if (user.role === "admin") return buildAccess(null, cfg, true);
-  const [sub, complimentary] = await Promise.all([getEntitledSubscription(user.id), getComplimentaryTier(user.id)]);
-  return accessForMember({ createdAt: user.createdAt, now: new Date(), subscription: sub, complimentary, config: cfg });
+  const db = await getDb();
+  const [sub, complimentary, [pass]] = await Promise.all([
+    getEntitledSubscription(user.id),
+    getComplimentaryTier(user.id),
+    db
+      .select({ endsAt: accessPasses.endsAt })
+      .from(accessPasses)
+      .where(and(eq(accessPasses.userId, user.id), eq(accessPasses.status, "paid")))
+      .orderBy(desc(accessPasses.endsAt))
+      .limit(1),
+  ]);
+  return accessForMember({
+    createdAt: user.createdAt,
+    now: new Date(),
+    subscription: sub,
+    complimentary,
+    passEndsAt: pass?.endsAt ?? null,
+    config: cfg,
+  });
 }
 
 export interface Viewer {
@@ -59,15 +77,33 @@ export interface Viewer {
 export const getViewer = cache(async (scope: "member" | "admin" = "member"): Promise<Viewer> => {
   const user = await getCurrentUser();
   const config = await getTierConfig();
-  const subscription = user ? await getEntitledSubscription(user.id) : null;
-  const complimentary = user ? await getComplimentaryTier(user.id) : null;
+  const db = await getDb();
+  const [subscription, complimentary, [pass]] = user
+    ? await Promise.all([
+        getEntitledSubscription(user.id),
+        getComplimentaryTier(user.id),
+        db
+          .select({ endsAt: accessPasses.endsAt })
+          .from(accessPasses)
+          .where(and(eq(accessPasses.userId, user.id), eq(accessPasses.status, "paid")))
+          .orderBy(desc(accessPasses.endsAt))
+          .limit(1),
+      ])
+    : [null, null, [] as { endsAt: Date }[]];
   const requested = user?.role === "admin" ? parseViewAs((await cookies()).get(VIEW_AS_COOKIE)?.value) : null;
   const viewAs = scope === "member" ? requested : null;
   const access =
     user?.role === "admin"
       ? accessForPreview(config, viewAs)
       : user
-        ? accessForMember({ createdAt: user.createdAt, now: new Date(), subscription, complimentary, config })
+        ? accessForMember({
+            createdAt: user.createdAt,
+            now: new Date(),
+            subscription,
+            complimentary,
+            passEndsAt: pass?.endsAt ?? null,
+            config,
+          })
         : ANONYMOUS;
   return { user, access, config, subscription, complimentary, viewAs: requested };
 });
