@@ -1,7 +1,7 @@
 "use server";
 
 import { eq } from "drizzle-orm";
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { trackEvent } from "@/server/analytics";
@@ -21,6 +21,7 @@ import {
 import { clientIp, rateLimit } from "@/server/auth/rate-limit";
 import { getDb } from "@/server/db";
 import { sessions, users } from "@/server/db/schema";
+import { referrerIdForCode } from "@/server/referrals/attribute";
 
 export type FormState = { error?: string; ok?: string } | undefined;
 
@@ -47,9 +48,16 @@ export async function signupAction(_: FormState, form: FormData): Promise<FormSt
   const db = await getDb();
   const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, parsed.data.email));
   if (existing) return { error: "An account with this email already exists. Sign in instead." };
+  const refRaw = (await cookies()).get("ref")?.value;
+  const refCode = refRaw?.trim().toUpperCase();
+  const referredByUserId = refCode ? await referrerIdForCode(refCode) : null;
   const [user] = await db
     .insert(users)
-    .values({ email: parsed.data.email, passwordHash: await hashPassword(parsed.data.password) })
+    .values({
+      email: parsed.data.email,
+      passwordHash: await hashPassword(parsed.data.password),
+      referredByUserId: referredByUserId ?? undefined,
+    })
     .returning();
   await sendVerificationEmail(user);
   await createSession(user.id);

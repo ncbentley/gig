@@ -82,7 +82,7 @@ Computed when a signal is read. It is not stored, and it does not use a hand-pic
 
 - **Cancelled subscriptions keep access until the end of the paid period.** Plan changes in mock mode take effect immediately.
 - **Stripe is optional.** Without `STRIPE_SECRET_KEY`, checkout goes to a local mock page that activates the plan. With Stripe configured, access is granted only by verified webhooks. An hourly reconciliation job refreshes Stripe subscriptions whose period has ended (in case a webhook was missed), and renews or expires mock ones.
-- **Prices live in the `plans` table.** The seeded amounts are placeholders. Basic is $5 a week, $10 a month, and $100 a year.
+- **Prices live in the `plans` table.** Basic is $33 a month, Silver is $66 a month, and Gold is $99 a month. Weekly and annual rows stay for subscriptions already sold, with `active` false, and they are not renewed.
 - **Email verification is required before checkout.** This reduces throwaway accounts on paid plans.
 
 ## AI
@@ -94,6 +94,13 @@ Computed when a signal is read. It is not stored, and it does not use a hand-pic
 ## Affiliates
 
 - **Affiliate links never touch entitlements.** They are shown in configured placements with a disclosure, counted through a `/go/:slug` redirect, and are never a condition of access.
+
+## Referral fees
+
+- **One tier.** A member earns only from customers they referred. The fee is $11, $22, or $33, one-third of the lower of the two monthly levels, and only when the collected amount equals that customer's catalog monthly price.
+- **The link locks on the first monthly payment.** `?ref=` is copied onto the account at signup. Checkout can replace the code until that payment. The $10 pass pays no fee and does not create a code.
+- **A lapse pays nothing for the gap.** The link and the code stay. Fees resume on later qualifying payments.
+- **Withdrawals are manual.** The minimum is $25. Bank details are encrypted with `APP_SECRET`. An admin marks the ACH transfer sent or rejects the request. The app does not move money.
 
 ## Analytics
 

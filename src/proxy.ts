@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { ATTR_COOKIE, TOUCH_HEADER, VID_COOKIE, advanceAttribution, decodeAttribution, encodeAttribution, touchFromRequest } from "@/server/analytics/attribution";
+import { isReferralCode } from "@/server/referrals/code";
 
 const YEAR_SECONDS = 400 * 24 * 60 * 60;
+const REF_COOKIE = "ref";
+const REF_MAX_AGE = 30 * 24 * 60 * 60;
 
 export function proxy(request: NextRequest) {
   const existing = decodeAttribution(request.cookies.get(ATTR_COOKIE)?.value);
@@ -29,6 +32,19 @@ export function proxy(request: NextRequest) {
   };
   if (visitorId !== state.visitorId) response.cookies.set(VID_COOKIE, state.visitorId, cookie);
   if (write) response.cookies.set(ATTR_COOKIE, encodeAttribution(state), cookie);
+
+  const refParam = request.nextUrl.searchParams.get("ref");
+  const ref = refParam?.trim().toUpperCase();
+  if (ref && isReferralCode(ref)) {
+    response.cookies.set(REF_COOKIE, ref, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: REF_MAX_AGE,
+    });
+  }
+
   return response;
 }
 

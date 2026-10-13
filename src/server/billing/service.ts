@@ -6,8 +6,15 @@ import { getDb } from "@/server/db";
 import { plans, subscriptions, users, type BillingPeriod, type Subscription, type Tier } from "@/server/db/schema";
 import { trackEvent, trackRevenue } from "@/server/analytics";
 import { billingMode, PERIOD_DAYS, stripePriceEnv } from "./config";
+import {
+  recordCollectedPayment,
+  restoreReversedPayment,
+  reverseCollectedPayment,
+} from "@/server/referrals/record";
+import { ENTITLED_STATUSES, getEntitledSubscription, getPlan } from "./subscriptions";
+import { grantPassFromStripe, refundPassForStripeCharge } from "./pass";
 
-const ENTITLED_STATUSES = ["active", "trialing", "past_due"] as const;
+export { getEntitledSubscription, getPlan } from "./subscriptions";
 
 let stripeClient: Stripe | null = null;
 export async function getStripe(): Promise<Stripe> {
@@ -24,46 +31,19 @@ export async function listPlans() {
   return db.select().from(plans).where(eq(plans.active, true));
 }
 
-export async function getPlan(tier: Tier, period: BillingPeriod) {
-  const db = await getDb();
-  const [row] = await db.select().from(plans).where(and(eq(plans.tier, tier), eq(plans.period, period)));
-  return row ?? null;
-}
-
-/**
- * The subscription that currently grants access. Cancelled subscriptions keep access
- * until the end of the paid period (configured rule: access_until_period_end).
- */
-export async function getEntitledSubscription(userId: string, now = new Date()): Promise<Subscription | null> {
-  const db = await getDb();
-  const [row] = await db
-    .select()
-    .from(subscriptions)
-    .where(
-      and(
-        eq(subscriptions.userId, userId),
-        inArray(subscriptions.status, [...ENTITLED_STATUSES]),
-        gt(subscriptions.currentPeriodEnd, now),
-      ),
-    )
-    .orderBy(desc(subscriptions.currentPeriodEnd))
-    .limit(1);
-  return row ?? null;
-}
-
 export async function listUserSubscriptions(userId: string) {
   const db = await getDb();
   return db.select().from(subscriptions).where(eq(subscriptions.userId, userId)).orderBy(desc(subscriptions.createdAt));
 }
 
 /** Retired prices stay in the catalog for existing subscriptions, but new checkout cannot sell them. */
-function rejectRetiredCheckout(tier: Tier, period: BillingPeriod) {
-  if (tier === "gold" && period === "weekly") throw new Error("Gold weekly is no longer offered.");
+function rejectRetiredCheckout(_tier: Tier, period: BillingPeriod) {
+  if (period !== "monthly") throw new Error("Only monthly plans are offered.");
 }
 
-/** Gold weekly keeps access through the period already paid, then stop. */
+/** Weekly and annual subscriptions keep access through the period already paid, then stop. */
 export function stopsAtPeriodEnd(sub: { tier: Tier; period: BillingPeriod }) {
-  return sub.tier === "gold" && sub.period === "weekly";
+  return sub.period !== "monthly";
 }
 
 export async function startCheckout(user: { id: string; email: string }, tier: Tier, period: BillingPeriod) {
@@ -121,6 +101,17 @@ export async function completeMockCheckout(userId: string, tier: Tier, period: B
   await recordAudit({ actor: { userId, label: "member" }, entityType: "subscription", entityId: sub.id, action: "subscription.started", after: { tier, period, provider: "mock" } });
   await trackEvent("subscription_started", userId, { tier, period, provider: "mock" });
   await trackRevenue(userId, { amountCents: plan.amountCents, currency: plan.currency, tier, period, provider: "mock" });
+  const [user] = await db.select({ email: users.email }).from(users).where(eq(users.id, userId));
+  if (user) {
+    await recordCollectedPayment({
+      paymentKey: `mock:${sub.id}:${sub.currentPeriodEnd.toISOString()}`,
+      userId,
+      tier,
+      period,
+      collectedCents: plan.amountCents,
+      customerEmail: user.email,
+    });
+  }
   return sub;
 }
 
@@ -149,6 +140,19 @@ function mapStripeStatus(s: string): Subscription["status"] {
   if (s === "active" || s === "trialing" || s === "past_due") return s;
   if (s === "canceled" || s === "unpaid" || s === "incomplete_expired") return "canceled";
   return "incomplete";
+}
+
+/** For invoice.paid only: null when the subscription is not tied to an existing user row. */
+async function resolveStripeSubscriptionUserId(sub: Stripe.Subscription): Promise<string | null> {
+  const db = await getDb();
+  let userId = sub.metadata?.userId;
+  if (!userId) {
+    const [existing] = await db.select().from(subscriptions).where(eq(subscriptions.providerSubscriptionId, sub.id));
+    userId = existing?.userId;
+  }
+  if (!userId) return null;
+  const [user] = await db.select({ id: users.id }).from(users).where(eq(users.id, userId));
+  return user ? userId : null;
 }
 
 /** Upserts local state from a Stripe subscription object. */
@@ -196,10 +200,49 @@ export async function handleStripeEvent(event: Stripe.Event) {
   switch (event.type) {
     case "checkout.session.completed": {
       const session = event.data.object as Stripe.Checkout.Session;
+      if (session.mode === "payment" && session.metadata?.kind === "pass") {
+        const userId = session.metadata.userId ?? session.client_reference_id;
+        if (userId) {
+          await grantPassFromStripe({ userId, paymentId: session.id, paidAt: new Date() });
+        }
+        break;
+      }
       if (session.subscription) {
         const sub = await stripe.subscriptions.retrieve(typeof session.subscription === "string" ? session.subscription : session.subscription.id);
         const v = await syncStripeSubscription(sub);
         await trackEvent("subscription_started", v.userId, { tier: v.tier, period: v.period, provider: "stripe" });
+      }
+      break;
+    }
+    case "charge.refunded": {
+      const charge = event.data.object as Stripe.Charge;
+      await refundPassForStripeCharge(charge);
+      const invoiceId = typeof charge.invoice === "string" ? charge.invoice : charge.invoice?.id;
+      let refundId = charge.refunds?.data?.[0]?.id;
+      if (invoiceId && !refundId) {
+        const refunds = await stripe.refunds.list({ charge: charge.id, limit: 1 });
+        refundId = refunds.data[0]?.id;
+      }
+      if (invoiceId && refundId) {
+        await reverseCollectedPayment({ paymentKey: invoiceId, externalId: refundId });
+      }
+      break;
+    }
+    case "charge.dispute.created": {
+      const dispute = event.data.object as Stripe.Dispute;
+      if (!dispute.charge) break;
+      let charge: Stripe.Charge =
+        typeof dispute.charge === "string" ? await stripe.charges.retrieve(dispute.charge) : dispute.charge;
+      const invoiceId = typeof charge.invoice === "string" ? charge.invoice : charge.invoice?.id;
+      if (invoiceId) {
+        await reverseCollectedPayment({ paymentKey: invoiceId, externalId: dispute.id });
+      }
+      break;
+    }
+    case "charge.dispute.closed": {
+      const dispute = event.data.object as Stripe.Dispute;
+      if (dispute.status === "won") {
+        await restoreReversedPayment({ externalId: dispute.id });
       }
       break;
     }
@@ -208,6 +251,36 @@ export async function handleStripeEvent(event: Stripe.Event) {
     case "customer.subscription.deleted":
       await syncStripeSubscription(event.data.object as Stripe.Subscription);
       break;
+    case "invoice.paid": {
+      const invoice = event.data.object as Stripe.Invoice;
+      if (invoice.amount_paid === 0) break;
+      const subscriptionId =
+        typeof invoice.subscription === "string" ? invoice.subscription : invoice.subscription?.id;
+      if (!subscriptionId) break;
+      const sub = await stripe.subscriptions.retrieve(subscriptionId);
+      const userId = await resolveStripeSubscriptionUserId(sub);
+      if (!userId) break;
+      const v = await syncStripeSubscription(sub);
+      const plan = await getPlan(v.tier, v.period);
+      const [user] = await (await getDb()).select({ email: users.email }).from(users).where(eq(users.id, v.userId));
+      if (!user || !plan) break;
+      await recordCollectedPayment({
+        paymentKey: invoice.id,
+        userId: v.userId,
+        tier: v.tier,
+        period: v.period,
+        collectedCents: invoice.amount_paid,
+        customerEmail: user.email,
+      });
+      await trackRevenue(v.userId, {
+        amountCents: invoice.amount_paid,
+        currency: plan.currency,
+        tier: v.tier,
+        period: v.period,
+        provider: "stripe",
+      });
+      break;
+    }
     default:
       break;
   }
@@ -232,6 +305,18 @@ export async function reconcileSubscriptions(now = new Date()) {
         await db.update(subscriptions).set({ status: "expired" }).where(eq(subscriptions.id, sub.id));
         expired++;
       } else {
+        const plan = await getPlan(sub.tier, sub.period);
+        const [user] = await db.select({ email: users.email }).from(users).where(eq(users.id, sub.userId));
+        if (plan && user && sub.period === "monthly") {
+          await recordCollectedPayment({
+            paymentKey: `mock:${sub.id}:${sub.currentPeriodEnd.toISOString()}`,
+            userId: sub.userId,
+            tier: sub.tier,
+            period: sub.period,
+            collectedCents: plan.amountCents,
+            customerEmail: user.email,
+          });
+        }
         await db
           .update(subscriptions)
           .set({ currentPeriodEnd: new Date(sub.currentPeriodEnd.getTime() + PERIOD_DAYS[sub.period] * 86_400_000) })
@@ -249,7 +334,7 @@ export async function reconcileSubscriptions(now = new Date()) {
   return { renewed, expired, scheduled };
 }
 
-/** Still-entitled Stripe Gold and weekly Platinum are set to cancel when the paid period ends. */
+/** Still-entitled Stripe subscriptions that are not monthly are set to cancel when the paid period ends. */
 async function scheduleRetiredStripePlans(now: Date) {
   if (!process.env.STRIPE_SECRET_KEY) return 0;
   const db = await getDb();
