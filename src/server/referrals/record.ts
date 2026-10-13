@@ -1,5 +1,5 @@
 import { and, eq, isNull } from "drizzle-orm";
-import { getEntitledSubscription, getPlan } from "@/server/billing/service";
+import { getEntitledSubscription, getPlan } from "@/server/billing/subscriptions";
 import { getDb } from "@/server/db";
 import { referralFees, users, type BillingPeriod, type Tier } from "@/server/db/schema";
 import { createReferralCode } from "./code";

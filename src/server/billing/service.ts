@@ -7,9 +7,10 @@ import { plans, subscriptions, users, type BillingPeriod, type Subscription, typ
 import { trackEvent, trackRevenue } from "@/server/analytics";
 import { billingMode, PERIOD_DAYS, stripePriceEnv } from "./config";
 import { recordCollectedPayment } from "@/server/referrals/record";
+import { ENTITLED_STATUSES, getEntitledSubscription, getPlan } from "./subscriptions";
 import { grantPassFromStripe, refundPassForStripeCharge } from "./pass";
 
-const ENTITLED_STATUSES = ["active", "trialing", "past_due"] as const;
+export { getEntitledSubscription, getPlan } from "./subscriptions";
 
 let stripeClient: Stripe | null = null;
 export async function getStripe(): Promise<Stripe> {
@@ -24,33 +25,6 @@ export async function getStripe(): Promise<Stripe> {
 export async function listPlans() {
   const db = await getDb();
   return db.select().from(plans).where(eq(plans.active, true));
-}
-
-export async function getPlan(tier: Tier, period: BillingPeriod) {
-  const db = await getDb();
-  const [row] = await db.select().from(plans).where(and(eq(plans.tier, tier), eq(plans.period, period)));
-  return row ?? null;
-}
-
-/**
- * The subscription that currently grants access. Cancelled subscriptions keep access
- * until the end of the paid period (configured rule: access_until_period_end).
- */
-export async function getEntitledSubscription(userId: string, now = new Date()): Promise<Subscription | null> {
-  const db = await getDb();
-  const [row] = await db
-    .select()
-    .from(subscriptions)
-    .where(
-      and(
-        eq(subscriptions.userId, userId),
-        inArray(subscriptions.status, [...ENTITLED_STATUSES]),
-        gt(subscriptions.currentPeriodEnd, now),
-      ),
-    )
-    .orderBy(desc(subscriptions.currentPeriodEnd))
-    .limit(1);
-  return row ?? null;
 }
 
 export async function listUserSubscriptions(userId: string) {
