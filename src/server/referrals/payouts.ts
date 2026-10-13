@@ -13,6 +13,15 @@ import { allocateFifo, requestableBalance } from "./money";
 
 const MIN_WITHDRAWAL_CENTS = 2500;
 
+function isUniqueViolation(error: unknown) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code: string }).code === "23505"
+  );
+}
+
 export type SavePayoutAccountInput = {
   userId: string;
   accountHolderName: string;
@@ -128,11 +137,18 @@ export async function requestWithdrawal(input: { userId: string; amountCents: nu
     throw new Error("The withdrawal is larger than the available balance.");
   }
 
-  await db.insert(referralWithdrawals).values({
-    userId: input.userId,
-    amountCents: input.amountCents,
-    status: "pending",
-  });
+  try {
+    await db.insert(referralWithdrawals).values({
+      userId: input.userId,
+      amountCents: input.amountCents,
+      status: "pending",
+    });
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      throw new Error("A withdrawal is already waiting.");
+    }
+    throw error;
+  }
 }
 
 export async function markWithdrawalSent(input: { withdrawalId: string; adminId: string }) {
@@ -142,7 +158,7 @@ export async function markWithdrawalSent(input: { withdrawalId: string; adminId:
     .select()
     .from(referralWithdrawals)
     .where(eq(referralWithdrawals.id, input.withdrawalId));
-  if (!withdrawal || withdrawal.status !== "pending") {
+  if (!withdrawal) {
     throw new Error("That withdrawal is not waiting.");
   }
 
@@ -170,45 +186,66 @@ export async function markWithdrawalSent(input: { withdrawalId: string; adminId:
 
   const allocatedByFee = new Map(allocatedRows.map((row) => [row.feeId, Number(row.total)]));
 
-  const allocations = allocateFifo(
-    feeRows.map((fee) => ({
-      id: fee.id,
-      createdAt: fee.createdAt.getTime(),
-      amountCents: fee.amountCents,
-      voidedCents: fee.voidedCents,
-      allocatedCents: allocatedByFee.get(fee.id) ?? 0,
-    })),
-    withdrawal.amountCents,
-  );
+  let allocations: { feeId: string; cents: number }[];
+  try {
+    allocations = allocateFifo(
+      feeRows.map((fee) => ({
+        id: fee.id,
+        createdAt: fee.createdAt.getTime(),
+        amountCents: fee.amountCents,
+        voidedCents: fee.voidedCents,
+        allocatedCents: allocatedByFee.get(fee.id) ?? 0,
+      })),
+      withdrawal.amountCents,
+    );
+  } catch (error) {
+    if (error instanceof Error && error.message === "Withdrawal exceeds open fees") {
+      throw new Error("The withdrawal is larger than the available balance.");
+    }
+    throw error;
+  }
 
   const resolvedAt = new Date();
 
   await db.transaction(async (tx) => {
-    if (allocations.length > 0) {
-      await tx.insert(referralAllocations).values(
-        allocations.map((allocation) => ({
-          withdrawalId: withdrawal.id,
-          feeId: allocation.feeId,
-          amountCents: allocation.cents,
-        })),
-      );
-    }
-    await tx
+    const [updated] = await tx
       .update(referralWithdrawals)
       .set({
         status: "sent",
         resolvedAt,
         resolvedByUserId: input.adminId,
       })
-      .where(eq(referralWithdrawals.id, withdrawal.id));
-  });
+      .where(
+        and(
+          eq(referralWithdrawals.id, input.withdrawalId),
+          eq(referralWithdrawals.status, "pending"),
+        ),
+      )
+      .returning();
+    if (!updated) {
+      throw new Error("That withdrawal is not waiting.");
+    }
 
-  await recordAudit({
-    actor: { userId: input.adminId, label: "admin" },
-    entityType: "referral_withdrawal",
-    entityId: withdrawal.id,
-    action: "referral.withdrawal.sent",
-    after: { withdrawalId: withdrawal.id, amountCents: withdrawal.amountCents },
+    if (allocations.length > 0) {
+      await tx.insert(referralAllocations).values(
+        allocations.map((allocation) => ({
+          withdrawalId: updated.id,
+          feeId: allocation.feeId,
+          amountCents: allocation.cents,
+        })),
+      );
+    }
+
+    await recordAudit(
+      {
+        actor: { userId: input.adminId, label: "admin" },
+        entityType: "referral_withdrawal",
+        entityId: updated.id,
+        action: "referral.withdrawal.sent",
+        after: { withdrawalId: updated.id, amountCents: updated.amountCents },
+      },
+      tx,
+    );
   });
 
   return { allocations };
@@ -218,29 +255,35 @@ export async function rejectWithdrawal(input: { withdrawalId: string; adminId: s
   const db = await getDb();
   const resolvedAt = new Date();
 
-  const [withdrawal] = await db
-    .select()
-    .from(referralWithdrawals)
-    .where(eq(referralWithdrawals.id, input.withdrawalId));
-  if (!withdrawal || withdrawal.status !== "pending") {
-    throw new Error("That withdrawal is not waiting.");
-  }
+  await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(referralWithdrawals)
+      .set({
+        status: "rejected",
+        resolvedAt,
+        resolvedByUserId: input.adminId,
+      })
+      .where(
+        and(
+          eq(referralWithdrawals.id, input.withdrawalId),
+          eq(referralWithdrawals.status, "pending"),
+        ),
+      )
+      .returning();
+    if (!updated) {
+      throw new Error("That withdrawal is not waiting.");
+    }
 
-  await db
-    .update(referralWithdrawals)
-    .set({
-      status: "rejected",
-      resolvedAt,
-      resolvedByUserId: input.adminId,
-    })
-    .where(eq(referralWithdrawals.id, input.withdrawalId));
-
-  await recordAudit({
-    actor: { userId: input.adminId, label: "admin" },
-    entityType: "referral_withdrawal",
-    entityId: input.withdrawalId,
-    action: "referral.withdrawal.rejected",
-    after: { withdrawalId: input.withdrawalId, amountCents: withdrawal.amountCents },
+    await recordAudit(
+      {
+        actor: { userId: input.adminId, label: "admin" },
+        entityType: "referral_withdrawal",
+        entityId: updated.id,
+        action: "referral.withdrawal.rejected",
+        after: { withdrawalId: updated.id, amountCents: updated.amountCents },
+      },
+      tx,
+    );
   });
 }
 

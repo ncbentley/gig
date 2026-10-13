@@ -293,7 +293,11 @@ describe("referral payouts", () => {
     expect(row.status).toBe("rejected");
 
     const rows = await db.select().from(auditLogs).where(eq(auditLogs.action, "referral.withdrawal.rejected"));
-    expect(rows.some((entry) => entry.entityId === pending.id)).toBe(true);
+    const entry = rows.find((row) => row.entityId === pending.id);
+    expect(entry).toBeDefined();
+    const after = entry!.afterJson as Record<string, unknown>;
+    expect(after).not.toHaveProperty("accountNumber");
+    expect(after).not.toHaveProperty("routingNumber");
 
     await db.delete(referralWithdrawals).where(eq(referralWithdrawals.userId, otherReferrer.id));
     await db.delete(users).where(eq(users.id, admin.id));

@@ -210,7 +210,12 @@ export const referralWithdrawals = pgTable(
     resolvedAt: ts("resolved_at"),
     resolvedByUserId: text("resolved_by_user_id"),
   },
-  (t) => [index("referral_withdrawals_user_idx").on(t.userId)],
+  (t) => [
+    index("referral_withdrawals_user_idx").on(t.userId),
+    uniqueIndex("referral_withdrawals_one_pending_idx")
+      .on(t.userId)
+      .where(sql`${t.status} = 'pending'`),
+  ],
 );
 
 export const referralAllocations = pgTable("referral_allocations", {

@@ -162,6 +162,13 @@
       "when": 1792540800000,
       "tag": "0022_referral_fees",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1792627200000,
+      "tag": "0023_one_pending_withdrawal",
+      "breakpoints": true
     }
   ]
 }
