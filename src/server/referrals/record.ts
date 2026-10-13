@@ -1,9 +1,17 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { getEntitledSubscription, getPlan } from "@/server/billing/subscriptions";
 import { getDb } from "@/server/db";
-import { referralFees, users, type BillingPeriod, type Tier } from "@/server/db/schema";
+import {
+  referralAdjustments,
+  referralAllocations,
+  referralFees,
+  referralWithdrawals,
+  users,
+  type BillingPeriod,
+  type Tier,
+} from "@/server/db/schema";
 import { createReferralCode } from "./code";
-import { feeForPayment, lowerTier } from "./money";
+import { feeForPayment, lowerTier, requestableBalance, reverseFee } from "./money";
 
 export type ReferralFeeRow = typeof referralFees.$inferSelect;
 
@@ -98,4 +106,96 @@ export async function recordCollectedPayment(input: {
 
   const [row] = await db.select().from(referralFees).where(eq(referralFees.paymentKey, input.paymentKey));
   return row ?? null;
+}
+
+export async function reverseCollectedPayment(input: { paymentKey: string; externalId: string }) {
+  const db = await getDb();
+
+  const [existingAdjustment] = await db
+    .select({ id: referralAdjustments.id })
+    .from(referralAdjustments)
+    .where(eq(referralAdjustments.externalId, input.externalId));
+  if (existingAdjustment) return;
+
+  const [fee] = await db.select().from(referralFees).where(eq(referralFees.paymentKey, input.paymentKey));
+  if (!fee) return;
+
+  const allocatedRows = await db
+    .select({ amountCents: referralAllocations.amountCents })
+    .from(referralAllocations)
+    .innerJoin(referralWithdrawals, eq(referralAllocations.withdrawalId, referralWithdrawals.id))
+    .where(and(eq(referralAllocations.feeId, fee.id), eq(referralWithdrawals.status, "sent")));
+  const allocatedCents = allocatedRows.reduce((sum, row) => sum + row.amountCents, 0);
+
+  const { voidedCents, clawbackCents } = reverseFee({
+    amountCents: fee.amountCents,
+    voidedCents: fee.voidedCents,
+    allocatedCents,
+  });
+  const voidedDelta = voidedCents - fee.voidedCents;
+
+  await db.update(referralFees).set({ voidedCents }).where(eq(referralFees.id, fee.id));
+  await db.insert(referralAdjustments).values({
+    feeId: fee.id,
+    externalId: input.externalId,
+    amountCents: -clawbackCents,
+    voidedCents: voidedDelta,
+  });
+
+  const [pendingWithdrawal] = await db
+    .select()
+    .from(referralWithdrawals)
+    .where(and(eq(referralWithdrawals.userId, fee.referrerUserId), eq(referralWithdrawals.status, "pending")));
+
+  if (!pendingWithdrawal) return;
+
+  const referrerFees = await db
+    .select({ amountCents: referralFees.amountCents, voidedCents: referralFees.voidedCents })
+    .from(referralFees)
+    .where(eq(referralFees.referrerUserId, fee.referrerUserId));
+
+  const [adjustmentsSum] = await db
+    .select({ total: sql<number>`coalesce(sum(${referralAdjustments.amountCents}), 0)` })
+    .from(referralAdjustments)
+    .innerJoin(referralFees, eq(referralAdjustments.feeId, referralFees.id))
+    .where(eq(referralFees.referrerUserId, fee.referrerUserId));
+
+  const [sentSum] = await db
+    .select({ total: sql<number>`coalesce(sum(${referralWithdrawals.amountCents}), 0)` })
+    .from(referralWithdrawals)
+    .where(and(eq(referralWithdrawals.userId, fee.referrerUserId), eq(referralWithdrawals.status, "sent")));
+
+  const balance = requestableBalance({
+    fees: referrerFees,
+    adjustmentsCents: Number(adjustmentsSum?.total ?? 0),
+    sentCents: Number(sentSum?.total ?? 0),
+    pendingCents: 0,
+  });
+
+  if (balance < pendingWithdrawal.amountCents) {
+    await db
+      .update(referralWithdrawals)
+      .set({ status: "rejected", resolvedAt: new Date(), resolvedByUserId: null })
+      .where(eq(referralWithdrawals.id, pendingWithdrawal.id));
+  }
+}
+
+export async function restoreReversedPayment(input: { externalId: string }) {
+  const db = await getDb();
+
+  const [adjustment] = await db
+    .select()
+    .from(referralAdjustments)
+    .where(eq(referralAdjustments.externalId, input.externalId));
+  if (!adjustment) return;
+
+  const [fee] = await db.select().from(referralFees).where(eq(referralFees.id, adjustment.feeId));
+  if (!fee) {
+    await db.delete(referralAdjustments).where(eq(referralAdjustments.id, adjustment.id));
+    return;
+  }
+
+  const voidedCents = Math.max(0, fee.voidedCents - adjustment.voidedCents);
+  await db.update(referralFees).set({ voidedCents }).where(eq(referralFees.id, fee.id));
+  await db.delete(referralAdjustments).where(eq(referralAdjustments.id, adjustment.id));
 }

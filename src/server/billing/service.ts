@@ -6,7 +6,11 @@ import { getDb } from "@/server/db";
 import { plans, subscriptions, users, type BillingPeriod, type Subscription, type Tier } from "@/server/db/schema";
 import { trackEvent, trackRevenue } from "@/server/analytics";
 import { billingMode, PERIOD_DAYS, stripePriceEnv } from "./config";
-import { recordCollectedPayment } from "@/server/referrals/record";
+import {
+  recordCollectedPayment,
+  restoreReversedPayment,
+  reverseCollectedPayment,
+} from "@/server/referrals/record";
 import { ENTITLED_STATUSES, getEntitledSubscription, getPlan } from "./subscriptions";
 import { grantPassFromStripe, refundPassForStripeCharge } from "./pass";
 
@@ -211,7 +215,31 @@ export async function handleStripeEvent(event: Stripe.Event) {
       break;
     }
     case "charge.refunded": {
-      await refundPassForStripeCharge(event.data.object as Stripe.Charge);
+      const charge = event.data.object as Stripe.Charge;
+      await refundPassForStripeCharge(charge);
+      const invoiceId = typeof charge.invoice === "string" ? charge.invoice : charge.invoice?.id;
+      const refundId = charge.refunds?.data?.[0]?.id;
+      if (invoiceId && refundId) {
+        await reverseCollectedPayment({ paymentKey: invoiceId, externalId: refundId });
+      }
+      break;
+    }
+    case "charge.dispute.created": {
+      const dispute = event.data.object as Stripe.Dispute;
+      if (!dispute.charge) break;
+      let charge: Stripe.Charge =
+        typeof dispute.charge === "string" ? await stripe.charges.retrieve(dispute.charge) : dispute.charge;
+      const invoiceId = typeof charge.invoice === "string" ? charge.invoice : charge.invoice?.id;
+      if (invoiceId) {
+        await reverseCollectedPayment({ paymentKey: invoiceId, externalId: dispute.id });
+      }
+      break;
+    }
+    case "charge.dispute.closed": {
+      const dispute = event.data.object as Stripe.Dispute;
+      if (dispute.status === "won") {
+        await restoreReversedPayment({ externalId: dispute.id });
+      }
       break;
     }
     case "customer.subscription.created":
