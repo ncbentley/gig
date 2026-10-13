@@ -164,6 +164,19 @@ function mapStripeStatus(s: string): Subscription["status"] {
   return "incomplete";
 }
 
+/** For invoice.paid only: null when the subscription is not tied to an existing user row. */
+async function resolveStripeSubscriptionUserId(sub: Stripe.Subscription): Promise<string | null> {
+  const db = await getDb();
+  let userId = sub.metadata?.userId;
+  if (!userId) {
+    const [existing] = await db.select().from(subscriptions).where(eq(subscriptions.providerSubscriptionId, sub.id));
+    userId = existing?.userId;
+  }
+  if (!userId) return null;
+  const [user] = await db.select({ id: users.id }).from(users).where(eq(users.id, userId));
+  return user ? userId : null;
+}
+
 /** Upserts local state from a Stripe subscription object. */
 export async function syncStripeSubscription(sub: Stripe.Subscription) {
   const db = await getDb();
@@ -239,6 +252,8 @@ export async function handleStripeEvent(event: Stripe.Event) {
         typeof invoice.subscription === "string" ? invoice.subscription : invoice.subscription?.id;
       if (!subscriptionId) break;
       const sub = await stripe.subscriptions.retrieve(subscriptionId);
+      const userId = await resolveStripeSubscriptionUserId(sub);
+      if (!userId) break;
       const v = await syncStripeSubscription(sub);
       const plan = await getPlan(v.tier, v.period);
       const [user] = await (await getDb()).select({ email: users.email }).from(users).where(eq(users.id, v.userId));
