@@ -57,13 +57,13 @@ export async function listUserSubscriptions(userId: string) {
 }
 
 /** Retired prices stay in the catalog for existing subscriptions, but new checkout cannot sell them. */
-function rejectRetiredCheckout(tier: Tier, period: BillingPeriod) {
-  if (tier === "gold" && period === "weekly") throw new Error("Gold weekly is no longer offered.");
+function rejectRetiredCheckout(_tier: Tier, period: BillingPeriod) {
+  if (period !== "monthly") throw new Error("Only monthly plans are offered.");
 }
 
-/** Gold weekly keeps access through the period already paid, then stop. */
+/** Weekly and annual subscriptions keep access through the period already paid, then stop. */
 export function stopsAtPeriodEnd(sub: { tier: Tier; period: BillingPeriod }) {
-  return sub.tier === "gold" && sub.period === "weekly";
+  return sub.period !== "monthly";
 }
 
 export async function startCheckout(user: { id: string; email: string }, tier: Tier, period: BillingPeriod) {
@@ -249,7 +249,7 @@ export async function reconcileSubscriptions(now = new Date()) {
   return { renewed, expired, scheduled };
 }
 
-/** Still-entitled Stripe Gold and weekly Platinum are set to cancel when the paid period ends. */
+/** Still-entitled Stripe subscriptions that are not monthly are set to cancel when the paid period ends. */
 async function scheduleRetiredStripePlans(now: Date) {
   if (!process.env.STRIPE_SECRET_KEY) return 0;
   const db = await getDb();
