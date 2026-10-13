@@ -22,7 +22,7 @@ export function parsePlanParams(sp: Record<string, string | string[] | undefined
   return { period, highlight };
 }
 
-/** Tier cards for monthly plans; `basePath` and query params support deep links from any page. */
+/** Monthly tier cards. */
 export async function PlanPicker({ highlight }: { period: BillingPeriod; highlight: string; basePath: string; anchor?: string }) {
   const { user, config, subscription } = await getViewer();
   const offeredTiers = TIER_ORDER;
@@ -73,7 +73,7 @@ export async function PlanPicker({ highlight }: { period: BillingPeriod; highlig
                   <span className="text-lg font-medium text-muted-foreground"> / month</span>
                 </div>
               ) : (
-                <div className="text-sm text-muted-foreground">Not offered for this period.</div>
+                <div className="text-sm text-muted-foreground">Pricing unavailable.</div>
               )}
               <div className="mt-5 border-t border-glow/15 pt-4 text-xs font-semibold text-primary/85">
                 {i === 0 ? "Includes" : `Everything in ${TIER_LABEL[offeredTiers[i - 1]]}, plus`}
