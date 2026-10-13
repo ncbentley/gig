@@ -35,6 +35,7 @@ const MEMBER: NavItem[] = [
   { href: "/signals", label: "Live signals", icon: Activity },
   { href: "/sources", label: "Top sources", icon: Trophy },
   { href: "/billing", label: "Billing", icon: CreditCard },
+  { href: "/referrals", label: "Referrals", icon: UsersRound },
   { href: "/account", label: "My profile", icon: UserRound },
 ];
 
@@ -48,6 +49,7 @@ const ADMIN: NavItem[] = [
   { href: "/admin/jobs", label: "Jobs", icon: Workflow },
   { href: "/admin/entitlements", label: "Entitlements", icon: ShieldCheck },
   { href: "/admin/affiliates", label: "Broker links", icon: Link2 },
+  { href: "/admin/referrals", label: "Referral payouts", icon: UsersRound },
   { href: "/admin/attribution", label: "Attribution", icon: Megaphone },
   { href: "/admin/audit", label: "Audit log", icon: FileClock },
   { href: "/admin/settings", label: "Settings", icon: Settings },
