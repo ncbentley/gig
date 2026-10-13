@@ -8,7 +8,9 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { fmtMoney } from "@/lib/format";
+import { ReferralCodeField } from "@/components/referral-code-field";
 import { requireUser } from "@/server/auth/guards";
+import { referralCodeForUserId } from "@/server/referrals/attribute";
 import { billingMode, PERIOD_LABEL } from "@/server/billing/config";
 import { PASS_PRICE_CENTS } from "@/server/billing/pass";
 import { getPlan } from "@/server/billing/service";
@@ -20,9 +22,10 @@ export const metadata: Metadata = { title: "Checkout (test mode)" };
 
 
 export default async function MockCheckoutPage({ searchParams }: PageProps<"/billing/mock-checkout">) {
-  await requireUser("/billing");
+  const user = await requireUser("/billing");
   if (billingMode() !== "mock") notFound();
   const sp = await searchParams;
+  const appliedReferralCode = user.referredByUserId ? await referralCodeForUserId(user.referredByUserId) : null;
 
   if (sp.pass === "1") {
     const config = await getTierConfig();
@@ -45,8 +48,9 @@ export default async function MockCheckoutPage({ searchParams }: PageProps<"/bil
               {fmtMoney(PASS_PRICE_CENTS, "usd")} one-time. Gold access for 10 days; does not renew.
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <Separator className="mb-4 bg-primary/20" />
+          <CardContent className="space-y-4">
+            <Separator className="bg-primary/20" />
+            <ReferralCodeField initialCode={appliedReferralCode} />
             <ul className="space-y-2 text-sm">
               {config.gold.features.map((f) => (
                 <li key={f} className="flex gap-2.5">
@@ -97,8 +101,9 @@ export default async function MockCheckoutPage({ searchParams }: PageProps<"/bil
             {fmtMoney(plan.amountCents, plan.currency)} per {PERIOD_LABEL[period]}, billed {period}. Cancel any time; access continues to the end of the paid period.
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <Separator className="mb-4 bg-primary/20" />
+        <CardContent className="space-y-4">
+          <Separator className="bg-primary/20" />
+          <ReferralCodeField initialCode={appliedReferralCode} />
           <ul className="space-y-2 text-sm">
             {config[tier].features.map((f) => (
               <li key={f} className="flex gap-2.5">

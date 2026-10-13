@@ -62,6 +62,13 @@ export async function recordCollectedPayment(input: {
 
   await assignReferralCodeIfNeeded(payer.id, payer.referralCode, input.period);
 
+  if (input.period === "monthly") {
+    await db
+      .update(users)
+      .set({ referralLockedAt: now })
+      .where(and(eq(users.id, payer.id), isNull(users.referralLockedAt)));
+  }
+
   const [existingFee] = await db
     .select()
     .from(referralFees)

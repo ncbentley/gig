@@ -17,6 +17,8 @@ import { getPlan, listUserSubscriptions } from "@/server/billing/service";
 import { appliedComplimentary } from "@/server/entitlements/complimentary";
 import { TIER_LABEL } from "@/server/entitlements/config";
 import { getViewer } from "@/server/entitlements/service";
+import { referralCodeForUserId } from "@/server/referrals/attribute";
+import { ReferralCodeField } from "@/components/referral-code-field";
 
 export const metadata: Metadata = { title: "Billing" };
 
@@ -43,10 +45,11 @@ export default async function BillingPage({ searchParams }: PageProps<"/billing"
   const viewer = await getViewer();
   const sub = viewer.subscription;
   const applied = user.role === "admin" ? null : appliedComplimentary(sub?.tier ?? null, viewer.complimentary);
-  const [plan, history, pass] = await Promise.all([
+  const [plan, history, pass, appliedReferralCode] = await Promise.all([
     sub ? getPlan(sub.tier, sub.period) : null,
     listUserSubscriptions(user.id),
     activePass(user.id),
+    user.referredByUserId ? referralCodeForUserId(user.referredByUserId) : Promise.resolve(null),
   ]);
   const mode = billingMode();
   const TierIcon = sub ? TIER_ICON[sub.tier] : applied ? TIER_ICON[applied] : Crown;
@@ -149,6 +152,16 @@ export default async function BillingPage({ searchParams }: PageProps<"/billing"
         {sub?.cancelAtPeriodEnd && (
           <CardFooter className="text-xs text-muted-foreground">Cancelled memberships keep access until the end of the period already paid for.</CardFooter>
         )}
+      </Card>
+
+      <Card className="mt-8 rounded-2xl [--card-spacing:--spacing(5)]">
+        <CardHeader>
+          <CardTitle className="text-base">Referral</CardTitle>
+          <CardDescription>Optional member code applied before your first monthly payment.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ReferralCodeField initialCode={appliedReferralCode} />
+        </CardContent>
       </Card>
 
       <Card className="mt-8 rounded-2xl [--card-spacing:--spacing(5)]">

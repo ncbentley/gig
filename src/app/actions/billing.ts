@@ -6,6 +6,9 @@ import { getCurrentUser } from "@/server/auth";
 import { completeMockPass, startPassCheckout } from "@/server/billing/pass";
 import { completeMockCheckout, openBillingPortal, setCancelAtPeriodEnd, startCheckout } from "@/server/billing/service";
 import { PERIODS, TIERS, type BillingPeriod, type Tier } from "@/server/db/schema";
+import { setReferrer } from "@/server/referrals/attribute";
+
+export type ReferralFormState = { error?: string } | undefined;
 
 function parsePlan(form: FormData) {
   const tier = String(form.get("tier"));
@@ -68,4 +71,19 @@ export async function billingPortalAction() {
   if (!user) redirect("/login");
   const { url } = await openBillingPortal(user.id);
   redirect(url);
+}
+
+export async function applyReferralCodeAction(_: ReferralFormState, form: FormData): Promise<ReferralFormState> {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  const code = String(form.get("code") ?? "").trim().toUpperCase();
+  try {
+    await setReferrer({ userId: user.id, code });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Something went wrong.";
+    return { error: message };
+  }
+  revalidatePath("/billing");
+  revalidatePath("/billing/mock-checkout");
+  return undefined;
 }
