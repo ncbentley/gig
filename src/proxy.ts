@@ -33,7 +33,8 @@ export function proxy(request: NextRequest) {
   if (visitorId !== state.visitorId) response.cookies.set(VID_COOKIE, state.visitorId, cookie);
   if (write) response.cookies.set(ATTR_COOKIE, encodeAttribution(state), cookie);
 
-  const ref = request.nextUrl.searchParams.get("ref");
+  const refParam = request.nextUrl.searchParams.get("ref");
+  const ref = refParam?.trim().toUpperCase();
   if (ref && isReferralCode(ref)) {
     response.cookies.set(REF_COOKIE, ref, {
       httpOnly: true,

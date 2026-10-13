@@ -7,6 +7,7 @@ import { completeMockPass, startPassCheckout } from "@/server/billing/pass";
 import { completeMockCheckout, openBillingPortal, setCancelAtPeriodEnd, startCheckout } from "@/server/billing/service";
 import { PERIODS, TIERS, type BillingPeriod, type Tier } from "@/server/db/schema";
 import { setReferrer } from "@/server/referrals/attribute";
+import { isReferralCode } from "@/server/referrals/code";
 
 export type ReferralFormState = { error?: string } | undefined;
 
@@ -77,6 +78,9 @@ export async function applyReferralCodeAction(_: ReferralFormState, form: FormDa
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   const code = String(form.get("code") ?? "").trim().toUpperCase();
+  if (!code || !isReferralCode(code)) {
+    return { error: "Enter an 8-character member code." };
+  }
   try {
     await setReferrer({ userId: user.id, code });
   } catch (error) {

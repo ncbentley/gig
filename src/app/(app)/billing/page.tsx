@@ -157,10 +157,9 @@ export default async function BillingPage({ searchParams }: PageProps<"/billing"
       <Card className="mt-8 rounded-2xl [--card-spacing:--spacing(5)]">
         <CardHeader>
           <CardTitle className="text-base">Referral</CardTitle>
-          <CardDescription>Optional member code applied before your first monthly payment.</CardDescription>
         </CardHeader>
         <CardContent>
-          <ReferralCodeField initialCode={appliedReferralCode} />
+          <ReferralCodeField initialCode={appliedReferralCode} locked={user.referralLockedAt != null} />
         </CardContent>
       </Card>
 

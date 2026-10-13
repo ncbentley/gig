@@ -50,7 +50,7 @@ export default async function MockCheckoutPage({ searchParams }: PageProps<"/bil
           </CardHeader>
           <CardContent className="space-y-4">
             <Separator className="bg-primary/20" />
-            <ReferralCodeField initialCode={appliedReferralCode} />
+            <ReferralCodeField initialCode={appliedReferralCode} locked={user.referralLockedAt != null} />
             <ul className="space-y-2 text-sm">
               {config.gold.features.map((f) => (
                 <li key={f} className="flex gap-2.5">
@@ -103,7 +103,7 @@ export default async function MockCheckoutPage({ searchParams }: PageProps<"/bil
         </CardHeader>
         <CardContent className="space-y-4">
           <Separator className="bg-primary/20" />
-          <ReferralCodeField initialCode={appliedReferralCode} />
+          <ReferralCodeField initialCode={appliedReferralCode} locked={user.referralLockedAt != null} />
           <ul className="space-y-2 text-sm">
             {config[tier].features.map((f) => (
               <li key={f} className="flex gap-2.5">

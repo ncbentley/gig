@@ -48,8 +48,9 @@ export async function signupAction(_: FormState, form: FormData): Promise<FormSt
   const db = await getDb();
   const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, parsed.data.email));
   if (existing) return { error: "An account with this email already exists. Sign in instead." };
-  const refCookie = (await cookies()).get("ref")?.value;
-  const referredByUserId = refCookie ? await referrerIdForCode(refCookie) : null;
+  const refRaw = (await cookies()).get("ref")?.value;
+  const refCode = refRaw?.trim().toUpperCase();
+  const referredByUserId = refCode ? await referrerIdForCode(refCode) : null;
   const [user] = await db
     .insert(users)
     .values({
