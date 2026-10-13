@@ -1,6 +1,6 @@
 import { CalendarClock, CheckCircle2, CreditCard, Crown, Package, Receipt, Wallet } from "lucide-react";
 import type { Metadata } from "next";
-import { billingPortalAction, cancelSubscriptionAction, resumeSubscriptionAction } from "@/app/actions/billing";
+import { billingPortalAction, buyPassAction, cancelSubscriptionAction, resumeSubscriptionAction } from "@/app/actions/billing";
 import { PageHeader, SectionTitle } from "@/components/page-header";
 import { parsePlanParams, PlanPicker } from "@/components/plan-picker";
 import { TIER_ICON } from "@/components/signal-bits";
@@ -12,6 +12,7 @@ import { fmtDate, fmtMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { requireUser } from "@/server/auth/guards";
 import { billingMode, PERIOD_LABEL } from "@/server/billing/config";
+import { PASS_PRICE_CENTS, activePass } from "@/server/billing/pass";
 import { getPlan, listUserSubscriptions } from "@/server/billing/service";
 import { appliedComplimentary } from "@/server/entitlements/complimentary";
 import { TIER_LABEL } from "@/server/entitlements/config";
@@ -42,7 +43,11 @@ export default async function BillingPage({ searchParams }: PageProps<"/billing"
   const viewer = await getViewer();
   const sub = viewer.subscription;
   const applied = user.role === "admin" ? null : appliedComplimentary(sub?.tier ?? null, viewer.complimentary);
-  const [plan, history] = await Promise.all([sub ? getPlan(sub.tier, sub.period) : null, listUserSubscriptions(user.id)]);
+  const [plan, history, pass] = await Promise.all([
+    sub ? getPlan(sub.tier, sub.period) : null,
+    listUserSubscriptions(user.id),
+    activePass(user.id),
+  ]);
   const mode = billingMode();
   const TierIcon = sub ? TIER_ICON[sub.tier] : applied ? TIER_ICON[applied] : Crown;
   const { period, highlight } = parsePlanParams(sp, sub ? { tier: sub.tier, period: sub.period } : undefined);
@@ -143,6 +148,24 @@ export default async function BillingPage({ searchParams }: PageProps<"/billing"
         </CardContent>
         {sub?.cancelAtPeriodEnd && (
           <CardFooter className="text-xs text-muted-foreground">Cancelled memberships keep access until the end of the period already paid for.</CardFooter>
+        )}
+      </Card>
+
+      <Card className="mt-8 rounded-2xl [--card-spacing:--spacing(5)]">
+        <CardHeader>
+          <CardTitle className="text-base">10-Day Full-Access Pass</CardTitle>
+          <CardDescription>
+            {pass
+              ? `Gold access is active on this pass until ${fmtDate(pass.endsAt)}.`
+              : `One-time ${fmtMoney(PASS_PRICE_CENTS, "usd")} for 10 days of Gold access. Does not renew.`}
+          </CardDescription>
+        </CardHeader>
+        {!pass && (
+          <CardFooter>
+            <form action={buyPassAction}>
+              <Button type="submit">10-Day Full-Access Pass, {fmtMoney(PASS_PRICE_CENTS, "usd")}</Button>
+            </form>
+          </CardFooter>
         )}
       </Card>
 

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/server/auth";
+import { completeMockPass, startPassCheckout } from "@/server/billing/pass";
 import { completeMockCheckout, openBillingPortal, setCancelAtPeriodEnd, startCheckout } from "@/server/billing/service";
 import { PERIODS, TIERS, type BillingPeriod, type Tier } from "@/server/db/schema";
 
@@ -12,6 +13,22 @@ function parsePlan(form: FormData) {
   if (!(TIERS as readonly string[]).includes(tier) || !(PERIODS as readonly string[]).includes(period)) throw new Error("Invalid plan");
   if (period !== "monthly") throw new Error("Only monthly plans are offered.");
   return { tier: tier as Tier, period: period as BillingPeriod };
+}
+
+export async function buyPassAction() {
+  const user = await getCurrentUser();
+  if (!user) redirect("/signup?next=%2Fbilling");
+  if (!user.emailVerifiedAt) redirect(`/check-email?email=${encodeURIComponent(user.email)}&reason=checkout`);
+  const { url } = await startPassCheckout(user);
+  redirect(url);
+}
+
+export async function confirmMockPassAction() {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (!user.emailVerifiedAt) redirect(`/check-email?email=${encodeURIComponent(user.email)}&reason=checkout`);
+  await completeMockPass(user.id);
+  redirect("/billing?checkout=success");
 }
 
 export async function checkoutAction(form: FormData) {

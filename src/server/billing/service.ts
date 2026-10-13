@@ -6,6 +6,7 @@ import { getDb } from "@/server/db";
 import { plans, subscriptions, users, type BillingPeriod, type Subscription, type Tier } from "@/server/db/schema";
 import { trackEvent, trackRevenue } from "@/server/analytics";
 import { billingMode, PERIOD_DAYS, stripePriceEnv } from "./config";
+import { grantPassFromStripe, refundPassForStripeCharge } from "./pass";
 
 const ENTITLED_STATUSES = ["active", "trialing", "past_due"] as const;
 
@@ -196,11 +197,22 @@ export async function handleStripeEvent(event: Stripe.Event) {
   switch (event.type) {
     case "checkout.session.completed": {
       const session = event.data.object as Stripe.Checkout.Session;
+      if (session.mode === "payment" && session.metadata?.kind === "pass") {
+        const userId = session.metadata.userId ?? session.client_reference_id;
+        if (userId) {
+          await grantPassFromStripe({ userId, paymentId: session.id, paidAt: new Date() });
+        }
+        break;
+      }
       if (session.subscription) {
         const sub = await stripe.subscriptions.retrieve(typeof session.subscription === "string" ? session.subscription : session.subscription.id);
         const v = await syncStripeSubscription(sub);
         await trackEvent("subscription_started", v.userId, { tier: v.tier, period: v.period, provider: "stripe" });
       }
+      break;
+    }
+    case "charge.refunded": {
+      await refundPassForStripeCharge(event.data.object as Stripe.Charge);
       break;
     }
     case "customer.subscription.created":

@@ -2,7 +2,7 @@ import { Check, ShieldCheck } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { confirmMockCheckoutAction } from "@/app/actions/billing";
+import { confirmMockCheckoutAction, confirmMockPassAction } from "@/app/actions/billing";
 import { TIER_ICON } from "@/components/signal-bits";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,6 +10,7 @@ import { Separator } from "@/components/ui/separator";
 import { fmtMoney } from "@/lib/format";
 import { requireUser } from "@/server/auth/guards";
 import { billingMode, PERIOD_LABEL } from "@/server/billing/config";
+import { PASS_PRICE_CENTS } from "@/server/billing/pass";
 import { getPlan } from "@/server/billing/service";
 import { PERIODS, TIERS, type BillingPeriod, type Tier } from "@/server/db/schema";
 import { FEATURE_CATALOG, TIER_LABEL } from "@/server/entitlements/config";
@@ -22,6 +23,55 @@ export default async function MockCheckoutPage({ searchParams }: PageProps<"/bil
   await requireUser("/billing");
   if (billingMode() !== "mock") notFound();
   const sp = await searchParams;
+
+  if (sp.pass === "1") {
+    const config = await getTierConfig();
+    const TierIcon = TIER_ICON.gold;
+
+    return (
+      <div className="mx-auto max-w-lg py-4">
+        <Card className="panel-gold rounded-2xl shadow-[0_0_32px_-8px_rgb(245_197_66/0.55)] ring-primary/55 [--card-spacing:--spacing(6)]">
+          <CardHeader>
+            <CardDescription className="inline-flex w-fit items-center gap-1.5 rounded-full border border-amber-400/40 bg-amber-400/10 px-2.5 py-0.5 text-xs font-semibold text-amber-300">
+              <ShieldCheck className="size-3.5" /> Test mode · no card required
+            </CardDescription>
+            <div className="mt-3 flex items-center gap-3.5">
+              <span className="flex size-12 shrink-0 items-center justify-center rounded-full bg-black/40 text-primary shadow-[0_0_18px_-2px_rgb(245_197_66/0.6)] ring-2 ring-primary/70">
+                <TierIcon className="size-6" />
+              </span>
+              <CardTitle className="gold-text text-2xl font-extrabold">10-Day Full-Access Pass</CardTitle>
+            </div>
+            <CardDescription className="mt-2 text-foreground/75">
+              {fmtMoney(PASS_PRICE_CENTS, "usd")} one-time. Gold access for 10 days; does not renew.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Separator className="mb-4 bg-primary/20" />
+            <ul className="space-y-2 text-sm">
+              {config.gold.features.map((f) => (
+                <li key={f} className="flex gap-2.5">
+                  <span className="mt-0.5 flex size-[18px] shrink-0 items-center justify-center rounded-full bg-win/15 text-win ring-1 ring-win/45">
+                    <Check className="size-3" strokeWidth={3} />
+                  </span>
+                  <span className="text-foreground/90">{FEATURE_CATALOG[f]}</span>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+          <CardFooter className="flex justify-between gap-2 border-primary/20">
+            <Link href="/billing" className={buttonVariants({ variant: "ghost" })}>Back</Link>
+            <form action={confirmMockPassAction}>
+              <Button type="submit" size="lg">
+                <TierIcon />
+                Buy pass ({fmtMoney(PASS_PRICE_CENTS)})
+              </Button>
+            </form>
+          </CardFooter>
+        </Card>
+      </div>
+    );
+  }
+
   const tier = String(sp.tier) as Tier;
   const period = String(sp.period) as BillingPeriod;
   if (!TIERS.includes(tier) || !PERIODS.includes(period)) notFound();
