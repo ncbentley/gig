@@ -6,6 +6,7 @@ import { getDb } from "@/server/db";
 import { plans, subscriptions, users, type BillingPeriod, type Subscription, type Tier } from "@/server/db/schema";
 import { trackEvent, trackRevenue } from "@/server/analytics";
 import { billingMode, PERIOD_DAYS, stripePriceEnv } from "./config";
+import { recordCollectedPayment } from "@/server/referrals/record";
 import { grantPassFromStripe, refundPassForStripeCharge } from "./pass";
 
 const ENTITLED_STATUSES = ["active", "trialing", "past_due"] as const;
@@ -122,6 +123,17 @@ export async function completeMockCheckout(userId: string, tier: Tier, period: B
   await recordAudit({ actor: { userId, label: "member" }, entityType: "subscription", entityId: sub.id, action: "subscription.started", after: { tier, period, provider: "mock" } });
   await trackEvent("subscription_started", userId, { tier, period, provider: "mock" });
   await trackRevenue(userId, { amountCents: plan.amountCents, currency: plan.currency, tier, period, provider: "mock" });
+  const [user] = await db.select({ email: users.email }).from(users).where(eq(users.id, userId));
+  if (user) {
+    await recordCollectedPayment({
+      paymentKey: `mock:${sub.id}:${sub.currentPeriodEnd.toISOString()}`,
+      userId,
+      tier,
+      period,
+      collectedCents: plan.amountCents,
+      customerEmail: user.email,
+    });
+  }
   return sub;
 }
 
@@ -220,6 +232,34 @@ export async function handleStripeEvent(event: Stripe.Event) {
     case "customer.subscription.deleted":
       await syncStripeSubscription(event.data.object as Stripe.Subscription);
       break;
+    case "invoice.paid": {
+      const invoice = event.data.object as Stripe.Invoice;
+      if (invoice.amount_paid === 0) break;
+      const subscriptionId =
+        typeof invoice.subscription === "string" ? invoice.subscription : invoice.subscription?.id;
+      if (!subscriptionId) break;
+      const sub = await stripe.subscriptions.retrieve(subscriptionId);
+      const v = await syncStripeSubscription(sub);
+      const plan = await getPlan(v.tier, v.period);
+      const [user] = await (await getDb()).select({ email: users.email }).from(users).where(eq(users.id, v.userId));
+      if (!user || !plan) break;
+      await recordCollectedPayment({
+        paymentKey: invoice.id,
+        userId: v.userId,
+        tier: v.tier,
+        period: v.period,
+        collectedCents: invoice.amount_paid,
+        customerEmail: user.email,
+      });
+      await trackRevenue(v.userId, {
+        amountCents: invoice.amount_paid,
+        currency: plan.currency,
+        tier: v.tier,
+        period: v.period,
+        provider: "stripe",
+      });
+      break;
+    }
     default:
       break;
   }
@@ -244,6 +284,18 @@ export async function reconcileSubscriptions(now = new Date()) {
         await db.update(subscriptions).set({ status: "expired" }).where(eq(subscriptions.id, sub.id));
         expired++;
       } else {
+        const plan = await getPlan(sub.tier, sub.period);
+        const [user] = await db.select({ email: users.email }).from(users).where(eq(users.id, sub.userId));
+        if (plan && user && sub.period === "monthly") {
+          await recordCollectedPayment({
+            paymentKey: `mock:${sub.id}:${sub.currentPeriodEnd.toISOString()}`,
+            userId: sub.userId,
+            tier: sub.tier,
+            period: sub.period,
+            collectedCents: plan.amountCents,
+            customerEmail: user.email,
+          });
+        }
         await db
           .update(subscriptions)
           .set({ currentPeriodEnd: new Date(sub.currentPeriodEnd.getTime() + PERIOD_DAYS[sub.period] * 86_400_000) })
