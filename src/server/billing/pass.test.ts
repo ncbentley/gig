@@ -5,7 +5,7 @@ import { runMigrations } from "@/server/db/migrate";
 import { accessPasses, users } from "@/server/db/schema";
 import { installAnalyticsSender } from "@/server/analytics/posthog";
 import { PASS_MS } from "@/server/entitlements/trial";
-import { PASS_PRICE_CENTS, activePass, completeMockPass, refundPass } from "./pass";
+import { PASS_PRICE_CENTS, activePass, completeMockPass, refundPass, refundPassForStripeCharge } from "./pass";
 
 beforeAll(async () => {
   await runMigrations();
@@ -71,6 +71,26 @@ describe("refundPass", () => {
 
     const [row] = await db.select().from(accessPasses).where(eq(accessPasses.id, pass.id));
     expect(row?.status).toBe("refunded");
+
+    await db.delete(accessPasses).where(eq(accessPasses.userId, user.id));
+    await db.delete(users).where(eq(users.id, user.id));
+  });
+});
+
+describe("refundPassForStripeCharge", () => {
+  it("returns without changing a pass when the charge does not match", async () => {
+    delete process.env.STRIPE_SECRET_KEY;
+    const db = await getDb();
+    const [user] = await db.insert(users).values({ email: `no-refund-${crypto.randomUUID()}@example.com`, passwordHash: "x" }).returning();
+    const now = new Date("2026-10-01T12:00:00.000Z");
+    const pass = await completeMockPass(user.id, now);
+
+    await expect(
+      refundPassForStripeCharge({ id: "ch_unrelated", payment_intent: "pi_unrelated" }),
+    ).resolves.toBeUndefined();
+
+    const [row] = await db.select().from(accessPasses).where(eq(accessPasses.id, pass.id));
+    expect(row?.status).toBe("paid");
 
     await db.delete(accessPasses).where(eq(accessPasses.userId, user.id));
     await db.delete(users).where(eq(users.id, user.id));
