@@ -33,7 +33,7 @@ export default function TermsPage() {
         {
           heading: "Subscriptions and billing",
           body: [
-            "Paid plans are billed weekly, monthly or annually in advance and renew automatically until cancelled. You can cancel at any time from the billing page; access continues until the end of the period you have paid for.",
+            "Paid plans are billed monthly in advance and renew automatically until cancelled. You can cancel at any time from the billing page; access continues until the end of the period you have paid for.",
             "Plan features and history windows are described on the pricing page and may change with reasonable notice. Refunds are handled according to applicable consumer law.",
           ],
         },

@@ -165,7 +165,7 @@ export default async function LandingPage() {
       <section className="mx-auto max-w-6xl px-4 pb-16">
         <h2 className="font-heading text-2xl font-bold tracking-tight">Plans</h2>
         <p className="mt-2 max-w-2xl text-pretty text-muted-foreground">
-          Create an account for {FREE_HISTORY_DAYS} days of every signal. No card. Monthly prices are below. Weekly and annual billing are on the pricing page.
+          Basic is $33 a month, Silver is $66, and Gold is $99.
         </p>
         <div className="mt-8 grid gap-4 md:grid-cols-3">
           {PAID.map((tier) => {
