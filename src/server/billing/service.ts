@@ -218,7 +218,11 @@ export async function handleStripeEvent(event: Stripe.Event) {
       const charge = event.data.object as Stripe.Charge;
       await refundPassForStripeCharge(charge);
       const invoiceId = typeof charge.invoice === "string" ? charge.invoice : charge.invoice?.id;
-      const refundId = charge.refunds?.data?.[0]?.id;
+      let refundId = charge.refunds?.data?.[0]?.id;
+      if (invoiceId && !refundId) {
+        const refunds = await stripe.refunds.list({ charge: charge.id, limit: 1 });
+        refundId = refunds.data[0]?.id;
+      }
       if (invoiceId && refundId) {
         await reverseCollectedPayment({ paymentKey: invoiceId, externalId: refundId });
       }

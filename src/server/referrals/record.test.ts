@@ -291,6 +291,83 @@ describe("reverseCollectedPayment", () => {
     await db.delete(users).where(eq(users.id, referrer.id));
     await db.delete(users).where(eq(users.id, customer.id));
   });
+
+  it("does not claw back twice when a second refund uses a different external id", async () => {
+    delete process.env.STRIPE_SECRET_KEY;
+    const db = await getDb();
+    await db
+      .insert(plans)
+      .values({ tier: "gold", period: "monthly", amountCents: 9900, currency: "usd", active: true })
+      .onConflictDoUpdate({
+        target: [plans.tier, plans.period],
+        set: { amountCents: 9900, currency: "usd", active: true },
+      });
+
+    const [referrer] = await db
+      .insert(users)
+      .values({ email: `referrer-${crypto.randomUUID()}@example.com`, passwordHash: "x" })
+      .returning();
+    const [customer] = await db
+      .insert(users)
+      .values({
+        email: `customer-${crypto.randomUUID()}@example.com`,
+        passwordHash: "x",
+        referredByUserId: referrer.id,
+      })
+      .returning();
+
+    const periodEnd = new Date(Date.now() + 86_400_000);
+    await db.insert(subscriptions).values({
+      userId: referrer.id,
+      tier: "gold",
+      period: "monthly",
+      status: "active",
+      provider: "mock",
+      providerSubscriptionId: `mock_sub_${crypto.randomUUID()}`,
+      currentPeriodEnd: periodEnd,
+    });
+
+    const fee = await recordCollectedPayment({
+      paymentKey: "in_twice",
+      userId: customer.id,
+      tier: "gold",
+      period: "monthly",
+      collectedCents: 9900,
+      customerEmail: customer.email,
+    });
+    expect(fee?.amountCents).toBe(3300);
+
+    const [sentWithdrawal] = await db
+      .insert(referralWithdrawals)
+      .values({ userId: referrer.id, amountCents: 2500, status: "sent", resolvedAt: new Date() })
+      .returning();
+    await db.insert(referralAllocations).values({
+      withdrawalId: sentWithdrawal.id,
+      feeId: fee!.id,
+      amountCents: 2500,
+    });
+
+    await reverseCollectedPayment({ paymentKey: "in_twice", externalId: "re_1" });
+    await reverseCollectedPayment({ paymentKey: "in_twice", externalId: "re_2" });
+
+    const [feeRow] = await db.select().from(referralFees).where(eq(referralFees.paymentKey, "in_twice"));
+    expect(feeRow?.voidedCents).toBe(800);
+
+    const adjustments = await db
+      .select()
+      .from(referralAdjustments)
+      .where(eq(referralAdjustments.feeId, fee!.id));
+    expect(adjustments).toHaveLength(1);
+    expect(adjustments[0]?.amountCents).toBe(-2500);
+
+    await db.delete(referralAllocations).where(eq(referralAllocations.feeId, fee!.id));
+    await db.delete(referralAdjustments).where(eq(referralAdjustments.feeId, fee!.id));
+    await db.delete(referralWithdrawals).where(eq(referralWithdrawals.userId, referrer.id));
+    await db.delete(referralFees).where(eq(referralFees.referredUserId, customer.id));
+    await db.delete(subscriptions).where(eq(subscriptions.userId, referrer.id));
+    await db.delete(users).where(eq(users.id, referrer.id));
+    await db.delete(users).where(eq(users.id, customer.id));
+  });
 });
 
 describe("restoreReversedPayment", () => {

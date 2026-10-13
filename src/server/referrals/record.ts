@@ -134,50 +134,71 @@ export async function reverseCollectedPayment(input: { paymentKey: string; exter
   });
   const voidedDelta = voidedCents - fee.voidedCents;
 
-  await db.update(referralFees).set({ voidedCents }).where(eq(referralFees.id, fee.id));
-  await db.insert(referralAdjustments).values({
-    feeId: fee.id,
-    externalId: input.externalId,
-    amountCents: -clawbackCents,
-    voidedCents: voidedDelta,
-  });
+  const [feeAdjustmentsSum] = await db
+    .select({ total: sql<number>`coalesce(sum(${referralAdjustments.amountCents}), 0)` })
+    .from(referralAdjustments)
+    .where(eq(referralAdjustments.feeId, fee.id));
+  const priorAdjustmentsCents = Number(feeAdjustmentsSum?.total ?? 0);
+  if (voidedDelta === 0 && priorAdjustmentsCents <= -clawbackCents) return;
 
   const [pendingWithdrawal] = await db
     .select()
     .from(referralWithdrawals)
     .where(and(eq(referralWithdrawals.userId, fee.referrerUserId), eq(referralWithdrawals.status, "pending")));
 
-  if (!pendingWithdrawal) return;
+  let rejectPendingWithdrawalId: string | null = null;
+  if (pendingWithdrawal) {
+    const referrerFees = await db
+      .select({
+        id: referralFees.id,
+        amountCents: referralFees.amountCents,
+        voidedCents: referralFees.voidedCents,
+      })
+      .from(referralFees)
+      .where(eq(referralFees.referrerUserId, fee.referrerUserId));
 
-  const referrerFees = await db
-    .select({ amountCents: referralFees.amountCents, voidedCents: referralFees.voidedCents })
-    .from(referralFees)
-    .where(eq(referralFees.referrerUserId, fee.referrerUserId));
+    const [adjustmentsSum] = await db
+      .select({ total: sql<number>`coalesce(sum(${referralAdjustments.amountCents}), 0)` })
+      .from(referralAdjustments)
+      .innerJoin(referralFees, eq(referralAdjustments.feeId, referralFees.id))
+      .where(eq(referralFees.referrerUserId, fee.referrerUserId));
 
-  const [adjustmentsSum] = await db
-    .select({ total: sql<number>`coalesce(sum(${referralAdjustments.amountCents}), 0)` })
-    .from(referralAdjustments)
-    .innerJoin(referralFees, eq(referralAdjustments.feeId, referralFees.id))
-    .where(eq(referralFees.referrerUserId, fee.referrerUserId));
+    const [sentSum] = await db
+      .select({ total: sql<number>`coalesce(sum(${referralWithdrawals.amountCents}), 0)` })
+      .from(referralWithdrawals)
+      .where(and(eq(referralWithdrawals.userId, fee.referrerUserId), eq(referralWithdrawals.status, "sent")));
 
-  const [sentSum] = await db
-    .select({ total: sql<number>`coalesce(sum(${referralWithdrawals.amountCents}), 0)` })
-    .from(referralWithdrawals)
-    .where(and(eq(referralWithdrawals.userId, fee.referrerUserId), eq(referralWithdrawals.status, "sent")));
+    const feesAfterVoid = referrerFees.map((row) =>
+      row.id === fee.id ? { amountCents: row.amountCents, voidedCents } : row,
+    );
 
-  const balance = requestableBalance({
-    fees: referrerFees,
-    adjustmentsCents: Number(adjustmentsSum?.total ?? 0),
-    sentCents: Number(sentSum?.total ?? 0),
-    pendingCents: 0,
-  });
+    const balance = requestableBalance({
+      fees: feesAfterVoid,
+      adjustmentsCents: Number(adjustmentsSum?.total ?? 0) - clawbackCents,
+      sentCents: Number(sentSum?.total ?? 0),
+      pendingCents: 0,
+    });
 
-  if (balance < pendingWithdrawal.amountCents) {
-    await db
-      .update(referralWithdrawals)
-      .set({ status: "rejected", resolvedAt: new Date(), resolvedByUserId: null })
-      .where(eq(referralWithdrawals.id, pendingWithdrawal.id));
+    if (balance < pendingWithdrawal.amountCents) {
+      rejectPendingWithdrawalId = pendingWithdrawal.id;
+    }
   }
+
+  await db.transaction(async (tx) => {
+    await tx.update(referralFees).set({ voidedCents }).where(eq(referralFees.id, fee.id));
+    await tx.insert(referralAdjustments).values({
+      feeId: fee.id,
+      externalId: input.externalId,
+      amountCents: -clawbackCents,
+      voidedCents: voidedDelta,
+    });
+    if (rejectPendingWithdrawalId) {
+      await tx
+        .update(referralWithdrawals)
+        .set({ status: "rejected", resolvedAt: new Date(), resolvedByUserId: null })
+        .where(eq(referralWithdrawals.id, rejectPendingWithdrawalId));
+    }
+  });
 }
 
 export async function restoreReversedPayment(input: { externalId: string }) {
@@ -196,6 +217,8 @@ export async function restoreReversedPayment(input: { externalId: string }) {
   }
 
   const voidedCents = Math.max(0, fee.voidedCents - adjustment.voidedCents);
-  await db.update(referralFees).set({ voidedCents }).where(eq(referralFees.id, fee.id));
-  await db.delete(referralAdjustments).where(eq(referralAdjustments.id, adjustment.id));
+  await db.transaction(async (tx) => {
+    await tx.update(referralFees).set({ voidedCents }).where(eq(referralFees.id, fee.id));
+    await tx.delete(referralAdjustments).where(eq(referralAdjustments.id, adjustment.id));
+  });
 }
