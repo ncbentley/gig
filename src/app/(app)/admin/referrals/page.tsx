@@ -1,6 +1,6 @@
 import { UsersRound } from "lucide-react";
 import { markWithdrawalSentAction, rejectWithdrawalAction } from "@/app/actions/referrals";
-import { EmptyState } from "@/components/admin-bits";
+import { EmptyState, Notice } from "@/components/admin-bits";
 import { PageHeader, SectionTitle } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -14,8 +14,9 @@ import { desc, eq, sql } from "drizzle-orm";
 
 export const metadata = { title: "Referral payouts" };
 
-export default async function AdminReferralsPage() {
+export default async function AdminReferralsPage({ searchParams }: PageProps<"/admin/referrals">) {
   await requireAdmin();
+  const sp = await searchParams;
   const db = await getDb();
 
   const pending = await db
@@ -63,6 +64,7 @@ export default async function AdminReferralsPage() {
         title="Referral payouts"
         description="Send ACH transfers manually, then mark requests sent or reject them. The app never moves money."
       />
+      <Notice searchParams={sp} />
       <div className="space-y-4">
         <Card>
           <CardHeader>

@@ -120,6 +120,10 @@ export async function requestWithdrawal(input: { userId: string; amountCents: nu
     throw new Error("Add a bank account before requesting a withdrawal.");
   }
 
+  if (!Number.isInteger(input.amountCents) || input.amountCents < 1) {
+    throw new Error("Enter a withdrawal amount.");
+  }
+
   if (input.amountCents < MIN_WITHDRAWAL_CENTS) {
     throw new Error("The minimum withdrawal is $25.");
   }

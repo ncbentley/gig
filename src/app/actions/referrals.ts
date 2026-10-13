@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/server/auth";
+import { requireAdmin } from "@/server/auth/guards";
 import {
   markWithdrawalSent,
   rejectWithdrawal,
@@ -39,6 +40,9 @@ export async function requestWithdrawalAction(_: ReferralFormState, form: FormDa
   if (!user) redirect("/login");
   const amount = String(form.get("amount") ?? "").trim();
   const amountCents = Math.round(Number(amount) * 100);
+  if (!Number.isFinite(amountCents) || !Number.isInteger(amountCents)) {
+    return { error: "Enter a withdrawal amount." };
+  }
   try {
     await requestWithdrawal({ userId: user.id, amountCents });
   } catch (error) {
@@ -50,21 +54,27 @@ export async function requestWithdrawalAction(_: ReferralFormState, form: FormDa
 }
 
 export async function markWithdrawalSentAction(form: FormData) {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
-  if (user.role !== "admin") throw new Error("Forbidden.");
+  const { user } = await requireAdmin();
   const withdrawalId = String(form.get("withdrawalId") ?? "").trim();
-  await markWithdrawalSent({ withdrawalId, adminId: user.id });
+  try {
+    await markWithdrawalSent({ withdrawalId, adminId: user.id });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Something went wrong.";
+    redirect(`/admin/referrals?error=${encodeURIComponent(message)}`);
+  }
   revalidatePath("/admin/referrals");
   redirect("/admin/referrals");
 }
 
 export async function rejectWithdrawalAction(form: FormData) {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
-  if (user.role !== "admin") throw new Error("Forbidden.");
+  const { user } = await requireAdmin();
   const withdrawalId = String(form.get("withdrawalId") ?? "").trim();
-  await rejectWithdrawal({ withdrawalId, adminId: user.id });
+  try {
+    await rejectWithdrawal({ withdrawalId, adminId: user.id });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Something went wrong.";
+    redirect(`/admin/referrals?error=${encodeURIComponent(message)}`);
+  }
   revalidatePath("/admin/referrals");
   redirect("/admin/referrals");
 }

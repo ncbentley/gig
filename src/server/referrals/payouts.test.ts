@@ -67,6 +67,20 @@ describe("referral payouts", () => {
     await cleanupReferrer(db, referrer.id, customer.id);
   });
 
+  it("refuses a non-numeric withdrawal amount", async () => {
+    const { db, referrer, customer } = await createReferrer();
+    await savePayoutAccount({
+      userId: referrer.id,
+      accountHolderName: "Ada",
+      routingNumber: "021000021",
+      accountNumber: "123456789",
+    });
+    await expect(requestWithdrawal({ userId: referrer.id, amountCents: Number.NaN })).rejects.toThrow(
+      "Enter a withdrawal amount.",
+    );
+    await cleanupReferrer(db, referrer.id, customer.id);
+  });
+
   it("refuses a request under the minimum after a payout account is saved", async () => {
     const { db, referrer, customer } = await createReferrer();
     await savePayoutAccount({
