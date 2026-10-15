@@ -1,7 +1,9 @@
 import { Activity, ChartCandlestick, Coins, History, Hourglass, LayoutDashboard, Radar, Radio, Trophy } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { AffiliateStrip } from "@/components/affiliate-strip";
+import { BookSwitcher, bookHref } from "@/components/book-switcher";
 import { BookSections } from "@/components/book-sections";
 import { DirectionPanel } from "@/components/direction-panel";
 import { IdeaList } from "@/components/idea-list";
@@ -13,7 +15,8 @@ import { SignalList } from "@/components/signal-list";
 import { TopSources } from "@/components/top-sources";
 import { fmtAge, fmtPrice } from "@/lib/format";
 import { can, lowestTierWith } from "@/server/entitlements/access";
-import { dashboardViewFor, readDashboardSnapshot } from "@/server/feed/snapshot";
+import { TIER_LABEL } from "@/server/entitlements/config";
+import { accessForDashboardView, dashboardsFor, readDashboardSnapshot, resolveDashboardView, type DashboardView } from "@/server/feed/snapshot";
 import { getViewer } from "@/server/entitlements/service";
 import { nowMs } from "@/lib/clock";
 
@@ -25,6 +28,11 @@ const FEATURES = [
   { icon: Trophy, label: "Source track records" },
 ];
 
+const BOOK_DESCRIPTION: Partial<Record<DashboardView, string>> = {
+  silver: "The Silver book. Consolidated ideas from nearby calls, wider than Gold.",
+  basic: "The Basic book. Individual signals, with no grouping.",
+};
+
 function ViewAll({ href }: { href: string }) {
   return (
     <Link href={href} className="rounded text-sm font-medium text-[#8db6ff] outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-ring">
@@ -33,10 +41,16 @@ function ViewAll({ href }: { href: string }) {
   );
 }
 
-export default async function DashboardPage() {
+export default async function DashboardPage({ searchParams }: PageProps<"/dashboard">) {
   const viewer = await getViewer();
   const { access, config, user } = viewer;
-  const snap = await readDashboardSnapshot(dashboardViewFor(access));
+  const sp = await searchParams;
+  const requested = typeof sp.book === "string" ? sp.book : undefined;
+  const books = dashboardsFor(access);
+  const view = resolveDashboardView(access, requested);
+  if (requested && requested !== view) redirect(bookHref(view, books[0], "/dashboard"));
+  const bookAccess = accessForDashboardView(view, config);
+  const snap = await readDashboardSnapshot(view);
   const now = nowMs();
   const lastBar = snap?.spot;
 
@@ -44,7 +58,11 @@ export default async function DashboardPage() {
     <PageHeader
       title="Dashboard"
       icon={LayoutDashboard}
-      description="Available trades, trades that are working, and a short history. Each membership is a smaller, more curated set."
+      description={
+        view !== books[0] && BOOK_DESCRIPTION[view]
+          ? BOOK_DESCRIPTION[view]
+          : "Available trades, trades that are working, and a short history. Each membership is a smaller, more curated set."
+      }
       features={FEATURES}
       actions={
         lastBar && (
@@ -81,8 +99,9 @@ export default async function DashboardPage() {
     );
   }
 
-  const silver = access.tier === "silver";
-  const goldBook = access.tier === "gold" && !access.isAdmin;
+  const silver = view === "silver";
+  const goldBook = view === "gold";
+  const historyHref = bookHref(view, books[0], "/history");
   const direction = snap?.direction ?? null;
   const ranking = snap?.ranking ?? { rows: [], eligibleCount: 0, sourceCount: 0 };
   const ideas = goldBook ? snap?.gold : silver ? snap?.ideas : null;
@@ -97,6 +116,7 @@ export default async function DashboardPage() {
     <>
       <FeedRefresh />
       {header}
+      <BookSwitcher books={books} current={view} />
       {!snap ? (
         <p className="text-sm text-muted-foreground">The dashboard is being prepared.</p>
       ) : (
@@ -112,7 +132,7 @@ export default async function DashboardPage() {
         <Stat
           label="History"
           value={historyCount}
-          hint={access.historyDays ? `last ${access.historyDays} days` : "full history"}
+          hint={bookAccess.historyDays ? `last ${bookAccess.historyDays} days` : "full history"}
           icon={History}
         />
         <Stat label="Tracked sources" value={ranking.sourceCount} icon={Radar} />
@@ -121,16 +141,18 @@ export default async function DashboardPage() {
       {ideas ? (
         <BookSections
           historyCount={ideas.historyCount}
+          historyHref={historyHref}
           available={<IdeaList items={ideas.available} now={now} empty="Nothing is waiting to fill." />}
           active={<IdeaList items={ideas.active} now={now} empty="Nothing is active right now." />}
-          history={<IdeaList items={ideas.history} now={now} empty="No trades in your history window yet." />}
+          history={<IdeaList items={ideas.history} now={now} empty={`No trades in the ${TIER_LABEL[view === "gold" ? "gold" : "silver"]} history window yet.`} />}
         />
       ) : (
         <BookSections
           historyCount={signals?.historyCount ?? 0}
+          historyHref={historyHref}
           available={<SignalList items={pending} now={now} empty="No entries are waiting to fill." />}
           active={<SignalList items={activeSignals} now={now} empty="No trades are active right now." />}
-          history={<SignalList items={signals?.closed ?? []} now={now} empty="No closed signals in your history window yet." />}
+          history={<SignalList items={signals?.closed ?? []} now={now} empty="No closed signals in this history window yet." />}
         />
       )}
 
@@ -141,7 +163,7 @@ export default async function DashboardPage() {
           hrefBase="/sources"
           eligibleCount={ranking.eligibleCount}
           sourceCount={ranking.sourceCount}
-          lockedHref="/upgrade?tier=silver&feature=sources.stats.summary"
+          lockedHref={can(access, "sources.stats.summary") ? undefined : "/upgrade?tier=silver&feature=sources.stats.summary"}
         />
       </section>
 

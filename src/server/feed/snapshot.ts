@@ -33,6 +33,28 @@ export function dashboardViewFor(access: { isAdmin: boolean; tier: string | null
   return "free";
 }
 
+const LOWER_BOOKS: Partial<Record<DashboardView, DashboardView[]>> = {
+  gold: ["gold", "silver", "basic"],
+  silver: ["silver", "basic"],
+  basic: ["basic"],
+};
+
+/** The member's own book, then every less-filtered book below it. */
+export function dashboardsFor(access: { isAdmin: boolean; tier: string | null }): DashboardView[] {
+  const own = dashboardViewFor(access);
+  return LOWER_BOOKS[own] ?? [own];
+}
+
+export function resolveDashboardView(access: { isAdmin: boolean; tier: string | null }, requested: string | undefined): DashboardView {
+  const allowed = dashboardsFor(access);
+  if (requested && allowed.includes(requested as DashboardView)) return requested as DashboardView;
+  return allowed[0];
+}
+
+export function accessForDashboardView(view: DashboardView, config: Awaited<ReturnType<typeof getTierConfig>>) {
+  return view === "admin" ? buildAccess(null, config, true) : view === "free" ? freeAccess() : buildAccess(view, config, false);
+}
+
 export interface DashboardCache {
   spot: { close: number; timestamp: string } | null;
   direction: {
@@ -62,8 +84,7 @@ export interface DashboardCache {
 }
 
 async function viewerFor(view: DashboardView, config: Awaited<ReturnType<typeof getTierConfig>>): Promise<Viewer> {
-  const access = view === "admin" ? buildAccess(null, config, true) : view === "free" ? freeAccess() : buildAccess(view, config, false);
-  return { user: null, access, config, subscription: null, complimentary: null, viewAs: null };
+  return { user: null, access: accessForDashboardView(view, config), config, subscription: null, complimentary: null, viewAs: null };
 }
 
 function iso(value: Date | string | null | undefined) {

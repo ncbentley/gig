@@ -7,6 +7,7 @@ export function BookSections(props: {
   active: React.ReactNode;
   history: React.ReactNode;
   historyCount: number;
+  historyHref?: string;
 }) {
   return (
     <>
@@ -24,7 +25,7 @@ export function BookSections(props: {
           title="History"
           action={
             props.historyCount > 5 ? (
-              <Link href="/history" className="rounded text-sm font-medium text-[#8db6ff] outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-ring">
+              <Link href={props.historyHref ?? "/history"} className="rounded text-sm font-medium text-[#8db6ff] outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-ring">
                 View more
               </Link>
             ) : undefined
