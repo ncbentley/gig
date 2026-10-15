@@ -65,6 +65,13 @@ export default async function BillingPage({ searchParams }: PageProps<"/billing"
           <AlertDescription>Your new plan is live. Locked sections are now available according to your tier.</AlertDescription>
         </Alert>
       )}
+      {sp.checkout === "failed" && (
+        <Alert className="mb-4">
+          <CreditCard />
+          <AlertTitle>Plan not changed</AlertTitle>
+          <AlertDescription>The current membership stayed in place.</AlertDescription>
+        </Alert>
+      )}
       {sp.checkout === "cancelled" && (
         <Alert className="mb-4">
           <CreditCard />
@@ -185,7 +192,7 @@ export default async function BillingPage({ searchParams }: PageProps<"/billing"
         <SectionTitle icon={Package} title={sub ? "Change plan" : "Choose your package"} />
         <PlanPicker period={period} highlight={highlight} basePath="/billing" anchor="plans" />
         <p className="mt-4 text-center text-xs text-muted-foreground">
-          Prices in USD. Subscriptions renew automatically until cancelled; cancelling keeps access until the end of the paid period.
+          Prices in USD. Subscriptions renew automatically until cancelled; cancelling keeps access until the end of the paid period. Changing plans replaces the current membership, and the price difference is charged or credited immediately.
         </p>
       </section>
 

@@ -21,7 +21,8 @@ export async function getStripe(): Promise<Stripe> {
   if (!process.env.STRIPE_SECRET_KEY) throw new Error("Stripe is not configured");
   if (!stripeClient) {
     const { default: StripeCtor } = await import("stripe");
-    stripeClient = new StripeCtor(process.env.STRIPE_SECRET_KEY);
+    const account = process.env.STRIPE_ACCOUNT_ID;
+    stripeClient = new StripeCtor(process.env.STRIPE_SECRET_KEY, account ? { stripeAccount: account } : undefined);
   }
   return stripeClient;
 }
@@ -59,6 +60,11 @@ export async function startCheckout(user: { id: string; email: string }, tier: T
   if (!priceId) throw new Error(`No Stripe price configured for ${tier}/${period} (set ${stripePriceEnv(tier, period)})`);
   const stripe = await getStripe();
   const existing = await getEntitledSubscription(user.id);
+  if (existing?.provider === "stripe" && existing.providerSubscriptionId) {
+    if (existing.tier === tier && existing.period === period) return { url: "/billing#plans" };
+    await changeStripePlan(stripe, existing.providerSubscriptionId, { userId: user.id, tier, period, priceId });
+    return { url: "/billing?checkout=success" };
+  }
   const session = await stripe.checkout.sessions.create({
     mode: "subscription",
     line_items: [{ price: priceId, quantity: 1 }],
@@ -71,6 +77,50 @@ export async function startCheckout(user: { id: string; email: string }, tier: T
     cancel_url: `${appUrl()}/billing?checkout=cancelled#plans`,
   });
   return { url: session.url! };
+}
+
+/** Replace the price on the member's current subscription. A new Checkout session would bill a second plan. */
+async function changeStripePlan(
+  stripe: Stripe,
+  subscriptionId: string,
+  change: { userId: string; tier: Tier; period: BillingPeriod; priceId: string },
+) {
+  const current = await stripe.subscriptions.retrieve(subscriptionId);
+  const item = current.items.data[0];
+  if (!item) throw new Error("Subscription has no price to change");
+  if (item.price.id === change.priceId) {
+    await syncStripeSubscription(current);
+    return;
+  }
+  let updated: Stripe.Subscription;
+  try {
+    updated = await stripe.subscriptions.update(
+      subscriptionId,
+      {
+        items: [{ id: item.id, price: change.priceId }],
+        metadata: { userId: change.userId, tier: change.tier, period: change.period },
+        proration_behavior: "always_invoice",
+        payment_behavior: "error_if_incomplete",
+        cancel_at_period_end: false,
+      },
+      {
+        // Same change retried after an error must not create another invoice.
+        idempotencyKey: `plan_${subscriptionId}_${item.price.id}_${change.priceId}`,
+        maxNetworkRetries: 0,
+      },
+    );
+  } catch (err) {
+    const after = await stripe.subscriptions.retrieve(subscriptionId);
+    if (after.items.data[0]?.price.id === change.priceId) {
+      updated = after;
+    } else if ((err as { type?: string }).type === "StripeCardError") {
+      throw new Error("The card on file could not be charged, so the plan was not changed.");
+    } else {
+      throw err;
+    }
+  }
+  await syncStripeSubscription(updated);
+  await trackEvent("upgrade_clicked", change.userId, { tier: change.tier, period: change.period, provider: "stripe" });
 }
 
 /** Local test-mode checkout. Replaces any current subscription (upgrade/downgrade immediately). */

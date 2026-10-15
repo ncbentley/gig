@@ -40,8 +40,13 @@ export async function checkoutAction(form: FormData) {
   const user = await getCurrentUser();
   if (!user) redirect(`/signup?next=${encodeURIComponent(`/billing?tier=${tier}&period=${period}#plans`)}`);
   if (!user.emailVerifiedAt) redirect(`/check-email?email=${encodeURIComponent(user.email)}&reason=checkout`);
-  const { url } = await startCheckout(user, tier, period);
-  redirect(url);
+  try {
+    const { url } = await startCheckout(user, tier, period);
+    redirect(url);
+  } catch (err) {
+    if (typeof err === "object" && err !== null && "digest" in err && String((err as { digest?: string }).digest).startsWith("NEXT_REDIRECT")) throw err;
+    redirect("/billing?checkout=failed#plans");
+  }
 }
 
 export async function confirmMockCheckoutAction(form: FormData) {
