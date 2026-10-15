@@ -45,6 +45,31 @@ infisical export \
   --format=dotenv \
   --silent > "$tmp"
 
+# Infisical key names must be shell identifiers. A stray character otherwise
+# stops Compose from reading the file. STRIPE_WEBHOOK_)SECRET becomes STRIPE_WEBHOOK_SECRET.
+normalized="$(mktemp)"
+trap 'rm -f "$tmp" "$normalized"' EXIT
+while IFS= read -r line || [ -n "$line" ]; do
+  if [ -z "$line" ] || [[ "$line" == \#* ]] || [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
+    printf '%s\n' "$line" >> "$normalized"
+    continue
+  fi
+  if [[ "$line" != *=* ]]; then
+    echo "Dropping Infisical secret with an unusable name" >&2
+    continue
+  fi
+  key="${line%%=*}"
+  value="${line#*=}"
+  clean="$(printf '%s' "$key" | tr -cd 'A-Za-z0-9_')"
+  if [ -z "$clean" ] || [[ ! "$clean" =~ ^[A-Za-z_] ]]; then
+    echo "Dropping Infisical secret with an unusable name" >&2
+    continue
+  fi
+  echo "Renamed Infisical secret to ${clean}" >&2
+  printf '%s=%s\n' "$clean" "$value" >> "$normalized"
+done < "$tmp"
+mv "$normalized" "$tmp"
+
 if ! grep -q '^APP_SECRET=.' "$tmp" || ! grep -q '^POSTGRES_PASSWORD=.' "$tmp"; then
   echo "Infisical export is missing APP_SECRET or POSTGRES_PASSWORD" >&2
   exit 1

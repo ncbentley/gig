@@ -6,6 +6,7 @@ import { capturePostHog, capturedProperties } from "./posthog";
 export const ANALYTICS_EVENTS = [
   "account_created",
   "checkout_started",
+  "pass_purchased",
   "subscription_started",
   "subscription_cancelled",
   "signal_viewed",

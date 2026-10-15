@@ -245,6 +245,28 @@ export async function syncStripeSubscription(sub: Stripe.Subscription) {
   return values;
 }
 
+function subscriptionIdForInvoice(invoice: Stripe.Invoice): string | null {
+  const subscription = invoice.parent?.subscription_details?.subscription;
+  if (!subscription) return null;
+  return typeof subscription === "string" ? subscription : subscription.id;
+}
+
+async function invoiceIdForCharge(stripe: Stripe, charge: Stripe.Charge): Promise<string | null> {
+  const legacy = (charge as { invoice?: string | { id?: string } | null }).invoice;
+  if (typeof legacy === "string") return legacy;
+  if (legacy && typeof legacy === "object" && legacy.id) return legacy.id;
+  const paymentIntentId =
+    typeof charge.payment_intent === "string" ? charge.payment_intent : charge.payment_intent?.id;
+  if (!paymentIntentId) return null;
+  const payments = await stripe.invoicePayments.list({
+    limit: 1,
+    payment: { type: "payment_intent", payment_intent: paymentIntentId },
+  });
+  const invoice = payments.data[0]?.invoice;
+  if (!invoice || (typeof invoice === "object" && "deleted" in invoice)) return null;
+  return typeof invoice === "string" ? invoice : invoice.id;
+}
+
 export async function handleStripeEvent(event: Stripe.Event) {
   const stripe = await getStripe();
   switch (event.type) {
@@ -267,7 +289,7 @@ export async function handleStripeEvent(event: Stripe.Event) {
     case "charge.refunded": {
       const charge = event.data.object as Stripe.Charge;
       await refundPassForStripeCharge(charge);
-      const invoiceId = typeof charge.invoice === "string" ? charge.invoice : charge.invoice?.id;
+      const invoiceId = await invoiceIdForCharge(stripe, charge);
       let refundId = charge.refunds?.data?.[0]?.id;
       if (invoiceId && !refundId) {
         const refunds = await stripe.refunds.list({ charge: charge.id, limit: 1 });
@@ -283,7 +305,7 @@ export async function handleStripeEvent(event: Stripe.Event) {
       if (!dispute.charge) break;
       let charge: Stripe.Charge =
         typeof dispute.charge === "string" ? await stripe.charges.retrieve(dispute.charge) : dispute.charge;
-      const invoiceId = typeof charge.invoice === "string" ? charge.invoice : charge.invoice?.id;
+      const invoiceId = await invoiceIdForCharge(stripe, charge);
       if (invoiceId) {
         await reverseCollectedPayment({ paymentKey: invoiceId, externalId: dispute.id });
       }
@@ -304,8 +326,7 @@ export async function handleStripeEvent(event: Stripe.Event) {
     case "invoice.paid": {
       const invoice = event.data.object as Stripe.Invoice;
       if (invoice.amount_paid === 0) break;
-      const subscriptionId =
-        typeof invoice.subscription === "string" ? invoice.subscription : invoice.subscription?.id;
+      const subscriptionId = subscriptionIdForInvoice(invoice);
       if (!subscriptionId) break;
       const sub = await stripe.subscriptions.retrieve(subscriptionId);
       const userId = await resolveStripeSubscriptionUserId(sub);
