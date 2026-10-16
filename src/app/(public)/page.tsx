@@ -113,10 +113,14 @@ export default async function LandingPage() {
             Discover which sources have delivered measurable results, how their trades performed, and what the data reveals about the wider gold-trading landscape.
           </p>
           <div className="mt-8">
-            <Link href="/signup" className={cn(buttonVariants({ size: "lg" }), "px-6")}>
-              Start your 7-day trial <ArrowRight />
-            </Link>
-            <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">No credit card required. A new account sees every signal for 7 days.</p>
+            <form action={buyPassAction}>
+              <button type="submit" className={cn(buttonVariants({ size: "lg" }), "px-6")}>
+                Get the 10-day pass <ArrowRight />
+              </button>
+            </form>
+            <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">
+              {fmtMoney(PASS_PRICE_CENTS, "usd")} once for Gold access. It does not renew.
+            </p>
           </div>
           <dl className="mt-12 flex flex-wrap gap-x-12 gap-y-6">
             {sources.length > 0 && (
@@ -329,10 +333,12 @@ export default async function LandingPage() {
         </p>
         <p className="mt-6 max-w-xl font-heading text-xl font-extrabold tracking-tight">Gold Intelligence Gateway puts the evidence in front of you.</p>
         <div className="mt-8">
-          <Link href="/signup" className={cn(buttonVariants({ size: "lg" }), "px-6")}>
-            Start your 7-day trial <ArrowRight />
-          </Link>
-          <p className="mt-3 text-sm text-muted-foreground">No credit card required. A new account sees every signal for 7 days.</p>
+          <form action={buyPassAction}>
+            <button type="submit" className={cn(buttonVariants({ size: "lg" }), "px-6")}>
+              Get the 10-day pass <ArrowRight />
+            </button>
+          </form>
+          <p className="mt-3 text-sm text-muted-foreground">{fmtMoney(PASS_PRICE_CENTS, "usd")} once for Gold access. It does not renew.</p>
         </div>
         <div className="mt-16">
           <AffiliateStrip placement="landing" />

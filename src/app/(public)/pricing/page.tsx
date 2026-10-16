@@ -13,7 +13,7 @@ import { PASS_PRICE_CENTS } from "@/server/billing/pass";
 export const metadata: Metadata = { title: "Pricing" };
 
 const FEATURES = [
-  { icon: Radio, label: "7-day trial, no card" },
+  { icon: Radio, label: "10-day Gold pass" },
   { icon: Timer, label: "Available, Active, and History" },
   { icon: BarChart3, label: "Source track records" },
   { icon: CalendarClock, label: "Cancel any time" },
@@ -27,12 +27,12 @@ export default async function PricingPage({ searchParams }: PageProps<"/pricing"
       <PageHeader
         icon={Package}
         title="Choose your package"
-        description="Every channel we can read, for 7 days, with no card. Basic keeps that book. Silver and Gold are tighter readings of the same calls."
+        description="Basic is every signal for 7 days. Silver and Gold are tighter readings of the same calls. The 10-day pass is Gold access, paid once."
         features={FEATURES}
       />
 
       <p className="mt-7 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-        Basic keeps the trial book after the week. Add a card for Silver or Gold during the trial and the rest of that week is Gold access. When the week ends, billing starts on the plan you picked.
+        Monthly plans renew until you cancel. The 10-day pass is a single payment for Gold access and does not renew.
       </p>
 
       <article className="mt-8 flex flex-col gap-4 rounded-2xl px-6 py-6 ring-1 ring-primary/55 panel-gold sm:flex-row sm:items-center sm:justify-between">
