@@ -1,12 +1,14 @@
 import { ArrowRight } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import { buyPassAction } from "@/app/actions/billing";
 import { AffiliateStrip } from "@/components/affiliate-strip";
 import { SignalList } from "@/components/signal-list";
 import { TopSources } from "@/components/top-sources";
 import { buttonVariants } from "@/components/ui/button";
 import { fmtMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { PASS_PRICE_CENTS } from "@/server/billing/pass";
 import { listPlans } from "@/server/billing/service";
 import { historyWindowLabel, TIER_LABEL } from "@/server/entitlements/config";
 import { getTierConfig } from "@/server/entitlements/service";
@@ -240,6 +242,28 @@ export default async function LandingPage() {
           Get started with gold-trading intelligence and choose the level of historical access and analysis you need.
         </p>
         <div className="mt-10 border-t border-primary/20">
+          <article className="grid gap-4 border-b border-primary/40 py-7 md:grid-cols-[11rem_11rem_minmax(0,1fr)_auto] md:items-start md:gap-8">
+            <div>
+              <p className="mb-1 text-sm font-semibold text-primary">One time</p>
+              <h3 className="gold-text font-heading text-2xl font-extrabold tracking-tight">10-day pass</h3>
+            </div>
+            <p className="gold-text font-heading text-3xl font-extrabold tabular-nums tracking-tight">
+              {fmtMoney(PASS_PRICE_CENTS, "usd")}
+              <span className="font-sans text-sm font-normal text-muted-foreground"> once</span>
+            </p>
+            <div>
+              <p className="text-sm text-foreground/75">Gold access for 10 days. Does not renew.</p>
+              <ul className="mt-3 space-y-1 text-sm text-foreground/85">
+                <li>The full Gold book</li>
+                <li>Full historical access</li>
+              </ul>
+            </div>
+            <form action={buyPassAction}>
+              <button type="submit" className={cn(buttonVariants({ size: "sm" }), "w-fit")}>
+                Get the pass
+              </button>
+            </form>
+          </article>
           {PAID.map((tier) => {
             const featured = tier === "gold";
             const plan = monthly.get(tier);
