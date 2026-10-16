@@ -61,7 +61,7 @@ export default async function GoldIdeaPage({ params }: PageProps<"/gold/[id]">) 
   if (!allowed || !can(viewer.access, "signals.core")) {
     return (
       <>
-        <PageHeader title="Gold idea" icon={Layers} description="A curated zone on the Gold book." />
+        <PageHeader title="Gold idea" icon={Layers} description="A zone from the Gold reading of the full set." />
         <LockedPanel feature="signals.core" requiredTier={lowestTierWith("signals.core", viewer.config)} title="The Gold book is a Gold feature" userId={viewer.user?.id} />
       </>
     );

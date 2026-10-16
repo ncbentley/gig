@@ -30,7 +30,7 @@ export default async function SignalsPage({ searchParams }: PageProps<"/signals"
   if (!can(viewer.access, "signals.core")) {
     return (
       <>
-        <PageHeader title="Live signals" icon={Radio} description="Gold signals from tracked sources, with every level replayed against market data." />
+        <PageHeader title="Live signals" icon={Radio} description="Every gold signal we can read, with every level replayed against market data." />
         <LockedPanel feature="signals.core" requiredTier={lowestTierWith("signals.core", viewer.config)} title="Signals are available to members" userId={viewer.user?.id} />
       </>
     );

@@ -15,7 +15,7 @@ export default async function SignupPage({ searchParams }: PageProps<"/signup">)
   return (
     <AuthCard
       title="Create your account"
-      description="Free to create. Choose a membership when you are ready."
+      description="A new account sees every signal for 7 days. No card."
       footer={
         <>
           Already a member? <Link href={`/login${next ? `?next=${encodeURIComponent(next)}` : ""}`} className="font-medium text-primary hover:underline">Sign in</Link>

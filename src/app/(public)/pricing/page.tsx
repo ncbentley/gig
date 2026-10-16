@@ -22,7 +22,7 @@ export default async function PricingPage({ searchParams }: PageProps<"/pricing"
       <PageHeader
         icon={Package}
         title="Choose your package"
-        description="A 7-day trial of every signal. Basic keeps that book. Silver is every consolidated idea. Gold is a shorter list of those ideas, with the news read above the book."
+        description="Every channel we can read, for 7 days, with no card. Basic keeps that book. Silver and Gold are tighter readings of the same calls."
         features={FEATURES}
       />
 

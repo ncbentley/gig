@@ -23,7 +23,7 @@ export default async function TopSourcesPage() {
       title="Top sources"
       icon={Trophy}
       features={FEATURES}
-      description="Tracked sources ranked by how their signals actually played out against XAU/USD market data."
+      description="Every source we can read, ranked by how its signals played out against XAU/USD minute data."
     />
   );
   if (!can(viewer.access, "signals.core")) {

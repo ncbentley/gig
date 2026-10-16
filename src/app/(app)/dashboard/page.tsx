@@ -23,7 +23,7 @@ import { nowMs } from "@/lib/clock";
 export const metadata: Metadata = { title: "Dashboard" };
 
 const FEATURES = [
-  { icon: Radio, label: "Live signals from tracked sources" },
+  { icon: Radio, label: "Live signals from every channel we can read" },
   { icon: ChartCandlestick, label: "Replayed against XAU/USD minute data" },
   { icon: Trophy, label: "Source track records" },
 ];
@@ -61,7 +61,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       description={
         view !== books[0] && BOOK_DESCRIPTION[view]
           ? BOOK_DESCRIPTION[view]
-          : "Available trades, trades that are working, and a short history. Each membership is a smaller, more curated set."
+          : "Available, active, and a short history. Each step up is a tighter reading of the same calls."
       }
       features={FEATURES}
       actions={

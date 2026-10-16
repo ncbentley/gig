@@ -282,20 +282,28 @@ export async function getSignalDetailForViewer(signalId: string, viewer: Viewer)
 }
 
 /**
- * Public sample for the landing page: closed trades older than `delayDays`, projected
- * with Silver-level fields only so nothing premium leaks to anonymous visitors.
+ * Finished calls shown on the landing page. Chosen once, instead of the latest
+ * closes, which can be one cluster of the same call. Silver fields only.
  */
-export async function listPublicSampleSignals(config: Viewer["config"], opts: { delayDays?: number; limit?: number } = {}) {
+const PUBLIC_SAMPLE_IDS = [
+  "9582dc4e-30df-450a-a594-ebc01dc98ec5",
+  "7c16f53a-ad67-4eb8-811c-981f401ccc8c",
+  "6ecdb9df-ba8a-45bf-a177-f6640b6666a2",
+  "44c9ddc3-c967-417e-8ec8-e2206dad928d",
+  "c199a434-b7f4-411c-a389-14b302726d01",
+  "fae7fbf6-327f-4b4a-b01c-4e699eeaaac5",
+];
+
+export async function listPublicSampleSignals(config: Viewer["config"]) {
   const db = await getDb();
-  const before = new Date(Date.now() - (opts.delayDays ?? 7) * 86_400_000);
   const rows = await db
     .select({ signal: signals, source: sources, outcome: signalOutcomes })
     .from(signals)
     .innerJoin(sources, eq(sources.id, signals.sourceId))
     .leftJoin(signalOutcomes, and(eq(signalOutcomes.signalId, signals.id), eq(signalOutcomes.isCurrent, true)))
-    .where(and(inArray(signals.status, ["WON", "LOST", "BREAKEVEN"]), lte(signals.signalTime, before), eq(sources.isQa, false), eq(sources.active, true)))
-    .orderBy(desc(signals.signalTime))
-    .limit(opts.limit ?? 6);
+    .where(and(inArray(signals.id, PUBLIC_SAMPLE_IDS), eq(sources.isQa, false)));
+  const order = new Map(PUBLIC_SAMPLE_IDS.map((id, index) => [id, index]));
+  rows.sort((a, b) => (order.get(a.signal.id) ?? 0) - (order.get(b.signal.id) ?? 0));
   const access = buildAccess("silver", config);
   return (await hydrate(rows)).map((b) => presentSignalListItem(b, access, config));
 }
