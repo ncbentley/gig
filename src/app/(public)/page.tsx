@@ -8,7 +8,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { fmtMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { listPlans } from "@/server/billing/service";
-import { FREE_HISTORY_DAYS, TIER_LABEL } from "@/server/entitlements/config";
+import { TIER_LABEL } from "@/server/entitlements/config";
 import { getTierConfig } from "@/server/entitlements/service";
 import { listPublicSampleSignals, listSources } from "@/server/signals/queries";
 import { getTopSources } from "@/server/statistics/service";
@@ -18,40 +18,72 @@ export const dynamic = "force-dynamic";
 
 const PAID: Tier[] = ["basic", "silver", "gold"];
 
-const BOOK_COPY: Record<Tier, string> = {
-  basic: `Every valid signal from every channel, for ${FREE_HISTORY_DAYS} days. A new account sees this book with no card. Basic keeps it after the week.`,
-  silver: "Nearby calls from different channels become one idea. The model does not add, edit, or close these.",
-  gold: "A shorter list taken from the Silver ideas. The news read sits above the book. Each row is the idea: direction, zone, stop, targets, and how many sources agreed.",
+const PLAN_BLURB: Record<Tier, string> = {
+  basic: "Your entry point into gold-signal intelligence.",
+  silver: "More history. A consolidated view of nearby calls.",
+  gold: "A more refined set of ideas with full historical access.",
 };
 
-const PLAN_BLURB: Record<Tier, string> = {
-  basic: "Every valid signal, one week back.",
-  silver: "Every consolidated idea.",
-  gold: "The news read, above a shorter list of ideas.",
-};
+const QUESTIONS = [
+  "Who consistently gets it right?",
+  "Which sources have a measurable track record?",
+  "How did their calls perform when compared with actual gold prices?",
+  "Are you following skill, or simply seeing the wins someone wants you to see?",
+];
+
+const DIFFERENCE = [
+  {
+    title: "Track the calls",
+    body: "Collect and organize gold-trading signals from a broad range of sources, creating a record that goes beyond individual screenshots and claims.",
+  },
+  {
+    title: "Measure the outcomes",
+    body: "Evaluate eligible trades against gold price data using defined entry, stop-loss, and take-profit rules.",
+  },
+  {
+    title: "Compare the performance",
+    body: "Explore source rankings, historical results, and available performance metrics to understand how different sources have performed.",
+  },
+  {
+    title: "See the bigger picture",
+    body: "Use aggregated signals and source analysis to better understand the broader gold-trading landscape, not just one trader's opinion.",
+  },
+];
+
+const STEPS = [
+  {
+    title: "We collect the signals",
+    body: "GIG tracks gold-trading sources and organizes their published calls into structured records.",
+  },
+  {
+    title: "We measure what happened",
+    body: "Eligible trades are replayed against XAU/USD market data using defined evaluation rules.",
+  },
+  {
+    title: "You explore the evidence",
+    body: "Compare source performance, examine trade histories, and access the level of gold intelligence that fits your needs.",
+  },
+];
+
+const TRUST = [
+  "Recorded signals provide a history to evaluate.",
+  "Trade-replay rules determine how entries, stops, and targets are assessed.",
+  "Sample sizes and calculation methods matter when comparing performance.",
+  "Historical outcomes are not predictions or guarantees of future results.",
+];
 
 function planLines(tier: Tier, historyDays: number | null): string[] {
-  const history = historyDays ? `${historyDays} days of history` : "Full history";
-  if (tier === "basic") return ["Every valid signal", history];
+  const history = historyDays ? `${historyDays} days of signal history` : "Full historical access";
+  if (tier === "basic") return ["Access to eligible signals", history];
   if (tier === "silver") return ["Nearby calls averaged into one idea", history];
-  return ["The news read above the book", "A shorter list from the Silver ideas", "Direction, zone, stop, targets, and how many sources agreed", history];
-}
-
-function historyLabel(days: number | null) {
-  return days ? `${days} days` : "Full history";
+  return ["A shorter list selected from Silver ideas", "News context alongside selected ideas", history];
 }
 
 export default async function LandingPage() {
   const config = await getTierConfig();
   const [samples, sources, plans] = await Promise.all([listPublicSampleSignals(config), listSources(), listPlans()]);
-  const { top, eligibleCount, sourceCount, totalClosed } = await getTopSources(sources.map((s) => s.id));
+  const { top, eligibleCount, sourceCount, totalClosed } = await getTopSources(sources.map((s) => s.id), 8);
   const monthly = new Map(plans.filter((p) => p.period === "monthly").map((p) => [p.tier, p]));
-
-  const books = [
-    { key: "basic" as const, name: TIER_LABEL.basic, window: historyLabel(config.basic.historyDays), body: BOOK_COPY.basic },
-    { key: "silver" as const, name: TIER_LABEL.silver, window: historyLabel(config.silver.historyDays), body: BOOK_COPY.silver },
-    { key: "gold" as const, name: TIER_LABEL.gold, window: historyLabel(config.gold.historyDays), body: BOOK_COPY.gold },
-  ];
 
   return (
     <>
@@ -68,71 +100,48 @@ export default async function LandingPage() {
         <div className="absolute inset-0 -z-10 bg-gradient-to-r from-[#040914] from-28% via-[#040914]/80 via-58% to-[#040914]/10 max-md:via-[#040914]/92" />
         <div className="absolute inset-x-0 bottom-0 -z-10 h-40 bg-gradient-to-t from-background to-transparent" />
         <div className="mx-auto flex min-h-[calc(100dvh-4rem)] max-w-6xl flex-col justify-end px-4 pb-16 pt-16 md:justify-center md:pb-24 md:pt-20">
-          <h1 className="max-w-[12ch] font-heading text-5xl font-extrabold leading-[0.92] tracking-[-0.035em] text-foreground md:text-7xl">
-            Don&apos;t follow a thousand traders.
-            <span className="mt-3 block">Follow all of them.</span>
+          <h1 className="max-w-[16ch] font-heading text-5xl font-extrabold leading-[0.94] tracking-[-0.035em] text-foreground md:text-6xl">
+            Stop guessing who to trust. Find out who&apos;s actually winning.
           </h1>
-          <p className="mt-6 max-w-[34rem] text-pretty text-lg leading-relaxed text-foreground/85">
-            Every gold channel we can read, stored as posted and measured on XAU/USD minute bars.
+          <p className="mt-6 max-w-[38rem] text-pretty text-lg leading-relaxed text-foreground/85">
+            Don&apos;t just follow one or two gold traders.
+            {sources.length > 0
+              ? ` We track ${sources.length.toLocaleString()} gold-trading channels and measure their calls against XAU/USD.`
+              : " We track the gold-trading channels we can read and measure their calls against XAU/USD."}{" "}
+            Discover which sources have delivered measurable results, how their trades performed, and what the data reveals about the wider gold-trading landscape.
           </p>
-          <div className="mt-8 flex flex-wrap gap-3">
+          <div className="mt-8">
             <Link href="/signup" className={cn(buttonVariants({ size: "lg" }), "px-6")}>
-              Create an account <ArrowRight />
+              Start your 7-day trial <ArrowRight />
             </Link>
-            <Link href="/pricing" className={cn(buttonVariants({ size: "lg", variant: "outline" }), "px-6")}>
-              Compare plans
-            </Link>
+            <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">No credit card required. A new account sees every signal for 7 days.</p>
           </div>
-          {(sources.length > 0 || totalClosed > 0) && (
-            <dl className="mt-12 flex flex-wrap gap-x-12 gap-y-6">
-              {sources.length > 0 && (
-                <div>
-                  <dd className="font-heading text-3xl font-extrabold tabular-nums tracking-tight">{sources.length.toLocaleString()}</dd>
-                  <dt className="mt-1 text-sm text-muted-foreground">{sources.length === 1 ? "Channel on the tape" : "Channels on the tape"}</dt>
-                </div>
-              )}
-              {totalClosed > 0 && (
-                <div>
-                  <dd className="font-heading text-3xl font-extrabold tabular-nums tracking-tight">{totalClosed.toLocaleString()}</dd>
-                  <dt className="mt-1 text-sm text-muted-foreground">Measured trades</dt>
-                </div>
-              )}
-            </dl>
-          )}
-          <p className="mt-8 max-w-md text-xs leading-relaxed text-muted-foreground">Results are historical measurements, not a forecast.</p>
+          <dl className="mt-12 flex flex-wrap gap-x-12 gap-y-6">
+            {sources.length > 0 && (
+              <div>
+                <dd className="font-heading text-3xl font-extrabold tabular-nums tracking-tight">{sources.length.toLocaleString()}</dd>
+                <dt className="mt-1 text-sm text-muted-foreground">Tracked sources</dt>
+              </div>
+            )}
+            {totalClosed > 0 && (
+              <div>
+                <dd className="font-heading text-3xl font-extrabold tabular-nums tracking-tight">{totalClosed.toLocaleString()}</dd>
+                <dt className="mt-1 text-sm text-muted-foreground">Measured trades</dt>
+              </div>
+            )}
+            <div>
+              <dd className="font-heading text-3xl font-extrabold tracking-tight">XAU/USD</dd>
+              <dt className="mt-1 text-sm text-muted-foreground">Market-based analysis</dt>
+            </div>
+          </dl>
         </div>
       </section>
 
-      <section id="ladder" className="mx-auto max-w-6xl scroll-mt-20 px-4 py-20">
-        <h2 className="max-w-[16ch] font-heading text-3xl font-extrabold tracking-[-0.03em] md:text-4xl">The same calls, read three ways.</h2>
-        <p className="mt-4 max-w-xl text-pretty leading-relaxed text-muted-foreground">
-          Available, Active, and History sit on every book. Nothing is dropped from the tape. Each step up is a tighter reading of the full set.
-        </p>
-        <ol className="mt-10 border-t border-primary/20">
-          {books.map((book) => {
-            const featured = book.key === "gold";
-            return (
-              <li
-                key={book.key}
-                className={cn(
-                  "grid gap-2 border-b border-primary/20 py-7 md:grid-cols-[9rem_minmax(0,1fr)_8rem] md:items-baseline md:gap-10",
-                  featured && "border-primary/40",
-                )}
-              >
-                <h3 className={cn("font-heading text-2xl font-extrabold tracking-tight", featured && "gold-text")}>{book.name}</h3>
-                <p className="max-w-xl text-sm leading-relaxed text-foreground/85">{book.body}</p>
-                <p className="font-heading text-sm font-semibold text-muted-foreground md:text-right">{book.window}</p>
-              </li>
-            );
-          })}
-        </ol>
-      </section>
-
-      <section className="border-y border-primary/15">
+      <section className="border-b border-primary/15">
         <div className="mx-auto max-w-6xl px-4 py-20">
-          <h2 className="font-heading text-3xl font-extrabold tracking-[-0.03em]">Track records from the full set.</h2>
+          <h2 className="max-w-[18ch] font-heading text-3xl font-extrabold tracking-[-0.03em] md:text-4xl">See how sources compare.</h2>
           <p className="mt-4 max-w-xl text-pretty leading-relaxed text-muted-foreground">
-            Lifetime results come from recorded outcomes. Ambiguous and cancelled signals stay out of the win rate. Names on this page are nicknames.
+            Ranked sources, using historical performance and the same evaluation rules. Names on this page are nicknames.
           </p>
           <div className="mt-10">
             <TopSources
@@ -146,26 +155,89 @@ export default async function LandingPage() {
               sourceCount={sourceCount}
             />
           </div>
+        </div>
+      </section>
 
-          <h2 className="mt-16 font-heading text-xl font-extrabold tracking-tight">Closed trades from the book.</h2>
-          <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted-foreground">A fixed sample of finished calls. Members see a signal when it is published.</p>
-          <div className="mt-6">
-            <SignalList items={samples} empty="Closed signals will appear here once the first trades complete." />
+      <section className="mx-auto max-w-6xl px-4 py-20">
+        <h2 className="max-w-[20ch] font-heading text-3xl font-extrabold tracking-[-0.03em] md:text-4xl">Everyone has a gold signal. But who has the track record?</h2>
+        <p className="mt-4 max-w-xl text-pretty leading-relaxed text-muted-foreground">
+          Telegram is full of traders predicting where gold is headed. Some publish impressive wins. Others post conflicting calls. A winning screenshot tells you very little about how a trader performs over hundreds of trades.
+        </p>
+        <ul className="mt-8 max-w-xl space-y-3 text-foreground/90">
+          {QUESTIONS.map((question) => (
+            <li key={question} className="border-l border-primary/40 pl-4">
+              {question}
+            </li>
+          ))}
+        </ul>
+        <p className="mt-8 max-w-xl text-pretty leading-relaxed text-foreground/85">You shouldn&apos;t have to guess. You should be able to examine the evidence.</p>
+      </section>
+
+      <section className="border-y border-primary/15">
+        <div className="mx-auto max-w-6xl px-4 py-20">
+          <h2 className="max-w-[18ch] font-heading text-3xl font-extrabold tracking-[-0.03em] md:text-4xl">One market. Hundreds of sources. A clearer picture.</h2>
+          <p className="mt-4 max-w-xl text-pretty leading-relaxed text-muted-foreground">
+            Gold Intelligence Gateway brings gold-trading signals together and evaluates their historical outcomes against XAU/USD market data.
+          </p>
+          <div className="mt-12 grid gap-x-16 gap-y-10 md:grid-cols-2">
+            {DIFFERENCE.map((item) => (
+              <article key={item.title}>
+                <h3 className="font-heading text-xl font-extrabold tracking-tight">{item.title}</h3>
+                <p className="mt-2 max-w-md text-sm leading-relaxed text-foreground/80">{item.body}</p>
+              </article>
+            ))}
           </div>
         </div>
       </section>
 
       <section className="mx-auto max-w-6xl px-4 py-20">
-        <h2 className="font-heading text-3xl font-extrabold tracking-[-0.03em]">How a result gets on the book.</h2>
+        <h2 className="max-w-[16ch] font-heading text-3xl font-extrabold tracking-[-0.03em] md:text-4xl">Talk is cheap. The track record matters.</h2>
         <p className="mt-4 max-w-xl text-pretty leading-relaxed text-muted-foreground">
-          Every post is stored as it was published. Later edits stay beside the original. Each signal is replayed against XAU/USD one-minute bars, with versioned rules for fills, targets, and stops. A recorded result can be recomputed from those records.
+          Anyone can call a gold move. The important question is what happened next. These are finished calls from the book, measured by the same replay rules. Members see a signal when it is published.
+        </p>
+        <div className="mt-10 grid gap-10 md:grid-cols-3">
+          <article>
+            <h3 className="font-heading text-lg font-extrabold">Look beyond the winning screenshot</h3>
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">Examine recorded calls and the outcomes produced by the trade-replay methodology.</p>
+          </article>
+          <article>
+            <h3 className="font-heading text-lg font-extrabold">Understand the numbers</h3>
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">Win rate and expectancy are shown with the sample size behind them.</p>
+          </article>
+          <article>
+            <h3 className="font-heading text-lg font-extrabold">Same rules every time</h3>
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">Entries, stops, and targets are assessed from the stored post and the minute tape.</p>
+          </article>
+        </div>
+        <div className="mt-10">
+          <SignalList items={samples} empty="Closed trades will appear here once this sample is recorded." />
+        </div>
+        <p className="mt-6 max-w-xl text-sm leading-relaxed text-muted-foreground">
+          Historical results depend on the replay rules and market data. Past performance does not guarantee future results.
         </p>
       </section>
 
-      <section className="mx-auto max-w-6xl px-4 pb-20">
-        <h2 className="font-heading text-3xl font-extrabold tracking-[-0.03em]">Plans</h2>
+      <section id="ladder" className="scroll-mt-20 border-y border-primary/15">
+        <div className="mx-auto max-w-6xl px-4 py-20">
+          <h2 className="max-w-[18ch] font-heading text-3xl font-extrabold tracking-[-0.03em] md:text-4xl">From thousands of calls to useful intelligence.</h2>
+          <ol className="mt-12 border-t border-primary/20">
+            {STEPS.map((step, index) => (
+              <li key={step.title} className="grid gap-3 border-b border-primary/20 py-7 md:grid-cols-[4rem_minmax(0,1fr)] md:gap-8">
+                <p className="font-heading text-2xl font-extrabold tabular-nums text-primary">{index + 1}</p>
+                <div className="max-w-xl">
+                  <h3 className="font-heading text-xl font-extrabold tracking-tight">{step.title}</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-foreground/80">{step.body}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-6xl px-4 py-20">
+        <h2 className="max-w-[16ch] font-heading text-3xl font-extrabold tracking-[-0.03em] md:text-4xl">Start exploring. Go deeper when you&apos;re ready.</h2>
         <p className="mt-4 max-w-xl text-pretty leading-relaxed text-muted-foreground">
-          Basic is $33 a month, Silver is $66, and Gold is $99. A 10-day full-access pass is $10.
+          Get started with gold-trading intelligence and choose the level of historical access and analysis you need.
         </p>
         <div className="mt-10 border-t border-primary/20">
           {PAID.map((tier) => {
@@ -175,11 +247,14 @@ export default async function LandingPage() {
               <article
                 key={tier}
                 className={cn(
-                  "grid gap-4 border-b border-primary/20 py-7 md:grid-cols-[9rem_11rem_minmax(0,1fr)_auto] md:items-start md:gap-8",
+                  "grid gap-4 border-b border-primary/20 py-7 md:grid-cols-[11rem_11rem_minmax(0,1fr)_auto] md:items-start md:gap-8",
                   featured && "border-primary/40",
                 )}
               >
-                <h3 className={cn("font-heading text-2xl font-extrabold tracking-tight", featured && "gold-text")}>{TIER_LABEL[tier]}</h3>
+                <div>
+                  {featured && <p className="mb-1 text-sm font-semibold text-primary">Deeper access</p>}
+                  <h3 className={cn("font-heading text-2xl font-extrabold tracking-tight", featured && "gold-text")}>{TIER_LABEL[tier]}</h3>
+                </div>
                 <p className={cn("font-heading text-3xl font-extrabold tabular-nums tracking-tight", featured && "gold-text")}>
                   {plan ? fmtMoney(plan.amountCents, plan.currency) : "—"}
                   <span className="font-sans text-sm font-normal text-muted-foreground"> / month</span>
@@ -192,20 +267,48 @@ export default async function LandingPage() {
                     ))}
                   </ul>
                 </div>
-                <Link href={`/pricing?tier=${tier}&period=monthly`} className="text-sm font-semibold text-primary hover:underline md:pt-2">
-                  See {TIER_LABEL[tier]} pricing
+                <Link href={`/pricing?tier=${tier}&period=monthly`} className={cn(buttonVariants({ variant: featured ? "default" : "outline", size: "sm" }), "w-fit")}>
+                  Choose {TIER_LABEL[tier]}
                 </Link>
               </article>
             );
           })}
         </div>
-        <p className="mt-8 max-w-xl text-sm leading-relaxed text-muted-foreground">
-          Basic keeps the trial book after the week. Add a card for Silver or Gold during those {FREE_HISTORY_DAYS} days and the rest of the trial is Gold access. When the week ends, billing starts on the plan you picked. Cancel any time. Access continues until the end of the paid period.
+      </section>
+
+      <section className="border-y border-primary/15">
+        <div className="mx-auto max-w-6xl px-4 py-20">
+          <h2 className="max-w-[18ch] font-heading text-3xl font-extrabold tracking-[-0.03em] md:text-4xl">Intelligence you can examine. Not promises you have to believe.</h2>
+          <p className="mt-4 max-w-xl text-pretty leading-relaxed text-muted-foreground">
+            Trading statistics are only useful when you understand how they were produced. Gold Intelligence Gateway is built around recorded signals, market data, and defined evaluation methods.
+          </p>
+          <ul className="mt-8 max-w-xl space-y-3 text-foreground/90">
+            {TRUST.map((line) => (
+              <li key={line} className="border-l border-primary/40 pl-4">
+                {line}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-8 max-w-xl text-pretty leading-relaxed text-foreground/85">
+            The goal is to help you evaluate the information, not ask you to trust another trading guru.
+          </p>
+          <p className="mt-4 max-w-xl text-sm leading-relaxed text-muted-foreground">
+            Gold Intelligence Gateway provides general informational and analytical content, not personalized financial advice. Trading leveraged products carries substantial risk.
+          </p>
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-6xl px-4 py-20">
+        <h2 className="max-w-[16ch] font-heading text-3xl font-extrabold tracking-[-0.03em] md:text-4xl">Stop following blindly. Start looking at the evidence.</h2>
+        <p className="mt-4 max-w-xl text-pretty leading-relaxed text-muted-foreground">
+          You can keep relying on a handful of trading channels, or explore a much broader view of the gold-signal landscape. Compare sources. Examine historical results. Discover what the data says.
         </p>
+        <p className="mt-6 max-w-xl font-heading text-xl font-extrabold tracking-tight">Gold Intelligence Gateway puts the evidence in front of you.</p>
         <div className="mt-8">
           <Link href="/signup" className={cn(buttonVariants({ size: "lg" }), "px-6")}>
-            Create an account <ArrowRight />
+            Start your 7-day trial <ArrowRight />
           </Link>
+          <p className="mt-3 text-sm text-muted-foreground">No credit card required. A new account sees every signal for 7 days.</p>
         </div>
         <div className="mt-16">
           <AffiliateStrip placement="landing" />

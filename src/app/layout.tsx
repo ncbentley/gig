@@ -16,7 +16,7 @@ const cinzel = Cinzel({ variable: "--font-cinzel", subsets: ["latin"] });
 export const metadata: Metadata = {
   title: { default: "Gold Intelligence Gateway — Gold signal intelligence", template: "%s · Gold Intelligence Gateway" },
   description:
-    "Don't follow a thousand gold traders. Every channel we can read is recorded, replayed on XAU/USD minute bars, and measured.",
+    "Stop guessing who to trust. Gold Intelligence Gateway measures gold-trading channels against XAU/USD so you can examine the track record.",
 };
 
 async function CaptureAttribution() {
