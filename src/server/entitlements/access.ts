@@ -59,6 +59,12 @@ export function historyCutoff(access: Access, now = new Date()): Date | null {
   return new Date(now.getTime() - access.historyDays * 86_400_000);
 }
 
+/** A call at `at` is inside the plan window. Unlimited history (`null`) keeps every call. */
+export function inHistoryWindow(at: Date, access: Access, now = new Date()) {
+  const cutoff = historyCutoff(access, now);
+  return cutoff === null || at >= cutoff;
+}
+
 export class EntitlementError extends Error {
   constructor(
     public feature: Feature | "subscription",

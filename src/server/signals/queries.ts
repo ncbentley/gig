@@ -133,6 +133,22 @@ export async function countOpenSignalsForViewer(viewer: Viewer): Promise<{ activ
   return { active: row?.active ?? 0, pending: row?.pending ?? 0 };
 }
 
+/** Closed signals inside the plan window. Same gates as the history list. */
+export async function countClosedSignalsForAccess(access: Access) {
+  const db = await getDb();
+  const cutoff = historyCutoff(access);
+  const conds: SQL[] = [sql`${signals.status} <> 'INVALID'`, inArray(signals.status, CLOSED)];
+  if (!access.isAdmin) conds.push(eq(sources.isQa, false));
+  if (cutoff) conds.push(gte(signals.signalTime, cutoff));
+  const [{ count }] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(signals)
+    .innerJoin(sources, eq(sources.id, signals.sourceId))
+    .innerJoin(rawEvents, eq(rawEvents.id, signals.originEventId))
+    .where(and(...conds));
+  return count ?? 0;
+}
+
 /** Lists signals visible to the viewer. Enforces history depth and advanced-filter entitlements server-side. */
 export async function listSignalsForViewer(
   viewer: Viewer,

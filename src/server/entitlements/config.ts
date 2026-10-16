@@ -65,3 +65,8 @@ export const DEFAULT_TIER_CONFIG: Record<Tier, TierConfig> = {
 
 export const TIER_ORDER: Tier[] = ["basic", "silver", "gold"];
 export const TIER_LABEL: Record<Tier, string> = { basic: "Basic", silver: "Silver", gold: "Gold" };
+
+/** Same wording as the landing plan cards. `null` is the unlimited Gold window. */
+export function historyWindowLabel(days: number | null) {
+  return days === null ? "Full historical access" : `${days} days of signal history`;
+}

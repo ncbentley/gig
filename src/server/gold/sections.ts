@@ -2,6 +2,7 @@ import { inArray } from "drizzle-orm";
 import { tradeGlance } from "@/lib/trade-glance";
 import { getDb } from "@/server/db";
 import { consolidatedIdeas } from "@/server/db/schema";
+import { inHistoryWindow } from "@/server/entitlements/access";
 import type { Viewer } from "@/server/entitlements/service";
 import { replayIdea } from "@/server/ideas/replay";
 import { indexTicks, OUTCOME_RULES } from "@/server/outcomes/engine";
@@ -22,7 +23,7 @@ export function byNewest<T extends { newestSignalAt: string }>(items: T[]): T[] 
 }
 
 /** One card per Gold book row. Prices are the model's, including a zone it composed itself. */
-export async function goldBookCards(_viewer: Viewer, spot: number | null, now = Date.now()): Promise<GoldBookCard[]> {
+export async function goldBookCards(viewer: Viewer, spot: number | null, now = Date.now()): Promise<GoldBookCard[]> {
   const rows = await listGoldEntries();
   const ideaIds = rows.map((row) => row.ideaId).filter((id): id is string => Boolean(id));
   const db = await getDb();
@@ -45,6 +46,8 @@ export async function goldBookCards(_viewer: Viewer, spot: number | null, now = 
   const cards: GoldBookCard[] = [];
   for (const row of rows) {
     const idea = row.ideaId ? byId.get(row.ideaId) : undefined;
+    const calledAt = idea?.newestSignalAt ?? row.createdAt;
+    if (!inHistoryWindow(calledAt, viewer.access, new Date(now))) continue;
     const played = replayIdea(
       {
         direction: row.direction,

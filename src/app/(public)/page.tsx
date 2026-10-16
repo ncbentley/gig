@@ -8,7 +8,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { fmtMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { listPlans } from "@/server/billing/service";
-import { TIER_LABEL } from "@/server/entitlements/config";
+import { historyWindowLabel, TIER_LABEL } from "@/server/entitlements/config";
 import { getTierConfig } from "@/server/entitlements/service";
 import { listPublicSampleSignals, listSources } from "@/server/signals/queries";
 import { getTopSources } from "@/server/statistics/service";
@@ -73,7 +73,7 @@ const TRUST = [
 ];
 
 function planLines(tier: Tier, historyDays: number | null): string[] {
-  const history = historyDays ? `${historyDays} days of signal history` : "Full historical access";
+  const history = historyWindowLabel(historyDays);
   if (tier === "basic") return ["Access to eligible signals", history];
   if (tier === "silver") return ["Nearby calls averaged into one idea", history];
   return ["A shorter list selected from Silver ideas", "News context alongside selected ideas", history];

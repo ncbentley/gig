@@ -11,6 +11,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { fmtDate } from "@/lib/format";
 import { can, lowestTierWith } from "@/server/entitlements/access";
+import { historyWindowLabel } from "@/server/entitlements/config";
 import { getViewer } from "@/server/entitlements/service";
 import { sourceDisplayName } from "@/server/presenters";
 import { listSignalsForViewer, listSignalTypes, listSources, parseSignalFilters } from "@/server/signals/queries";
@@ -59,8 +60,8 @@ export default async function SignalsPage({ searchParams }: PageProps<"/signals"
         features={basic ? [...FEATURES, FILTER_FEATURE] : FEATURES}
         description={
           result.historyCutoff
-            ? `Showing signals since ${fmtDate(result.historyCutoff)} (${viewer.access.historyDays}-day history on your plan).`
-            : "Full signal history."
+            ? `Showing signals since ${fmtDate(result.historyCutoff)}. ${historyWindowLabel(viewer.access.historyDays)}.`
+            : historyWindowLabel(null)
         }
       />
       <div className="mb-4">

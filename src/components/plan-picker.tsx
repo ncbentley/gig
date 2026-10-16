@@ -7,7 +7,7 @@ import { fmtMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { listPlans } from "@/server/billing/service";
 import { PERIODS, type BillingPeriod, type Tier } from "@/server/db/schema";
-import { FEATURE_CATALOG, TIER_LABEL, TIER_ORDER } from "@/server/entitlements/config";
+import { FEATURE_CATALOG, historyWindowLabel, TIER_LABEL, TIER_ORDER } from "@/server/entitlements/config";
 import { getViewer } from "@/server/entitlements/service";
 
 const TAGLINE: Record<Tier, string> = {
@@ -87,7 +87,7 @@ export async function PlanPicker({ highlight }: { period: BillingPeriod; highlig
                 ))}
                 <li className="flex gap-2.5">
                   <CheckDot />
-                  <span className="text-foreground/90">{config[tier].historyDays ? `${config[tier].historyDays} days of signal history` : "Unlimited signal history"}</span>
+                  <span className="text-foreground/90">{historyWindowLabel(config[tier].historyDays)}</span>
                 </li>
               </ul>
             </CardContent>

@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 import { currentBoard } from "@/server/board/service";
 import { getDb } from "@/server/db";
 import { consolidatedIdeas, goldBookEntries, type BoardPick } from "@/server/db/schema";
-import { can, lowestTierWith } from "@/server/entitlements/access";
+import { can, inHistoryWindow, lowestTierWith, tierForSignalTime } from "@/server/entitlements/access";
 import { getViewer } from "@/server/entitlements/service";
 import { goldSection } from "@/server/gold/close";
 import type { IdeaPhase } from "@/server/ideas/phase";
@@ -69,6 +69,21 @@ export default async function GoldIdeaPage({ params }: PageProps<"/gold/[id]">) 
   const db = await getDb();
   const [row] = await db.select().from(goldBookEntries).where(eq(goldBookEntries.id, id));
   if (!row) notFound();
+  const linked = row.ideaId ? (await db.select().from(consolidatedIdeas).where(eq(consolidatedIdeas.id, row.ideaId)))[0] : null;
+  const calledAt = linked?.newestSignalAt ?? row.createdAt;
+  if (!inHistoryWindow(calledAt, viewer.access)) {
+    return (
+      <>
+        <PageHeader title="Gold idea" icon={Layers} description="A zone from the Gold reading of the full set." />
+        <LockedPanel
+          feature="sources.history.full"
+          requiredTier={tierForSignalTime(calledAt, viewer.config)}
+          title="This idea is older than your plan’s history window"
+          userId={viewer.user?.id}
+        />
+      </>
+    );
+  }
   const [lastBar] = (await getRecentBars(1)).slice(-1);
   const startedMs = row.createdAt.getTime();
   const played = replayIdea(
@@ -96,7 +111,7 @@ export default async function GoldIdeaPage({ params }: PageProps<"/gold/[id]">) 
   );
   const phase: IdeaPhase = section === "active" ? "playing-out" : section;
   const outcome = played.outcome;
-  const idea = row.ideaId ? (await db.select().from(consolidatedIdeas).where(eq(consolidatedIdeas.id, row.ideaId)))[0] : null;
+  const idea = linked;
   const items = idea ? await listSignalListItemsByIds(idea.signalIds, viewer) : [];
   const expired = !outcome.entered && items.length > 0 && items.every((item) => item.status === "EXPIRED" || item.status === "CANCELLED");
   const closedUnfilled = row.closeCalledAt !== null && !outcome.entered && !expired;

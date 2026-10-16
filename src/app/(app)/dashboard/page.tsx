@@ -15,9 +15,11 @@ import { SignalList } from "@/components/signal-list";
 import { TopSources } from "@/components/top-sources";
 import { fmtAge, fmtPrice } from "@/lib/format";
 import { can, lowestTierWith } from "@/server/entitlements/access";
-import { TIER_LABEL } from "@/server/entitlements/config";
-import { accessForDashboardView, dashboardsFor, readDashboardSnapshot, resolveDashboardView, type DashboardView } from "@/server/feed/snapshot";
+import { historyWindowLabel, TIER_LABEL } from "@/server/entitlements/config";
+import { accessForDashboardView, applyHistoryWindow, dashboardsFor, readDashboardSnapshot, resolveDashboardView, type DashboardView } from "@/server/feed/snapshot";
+import { countHistoryIdeasForAccess } from "@/server/ideas/service";
 import { getViewer } from "@/server/entitlements/service";
+import { countClosedSignalsForAccess, countOpenSignalsForViewer } from "@/server/signals/queries";
 import { nowMs } from "@/lib/clock";
 
 export const metadata: Metadata = { title: "Dashboard" };
@@ -50,8 +52,10 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const view = resolveDashboardView(access, requested);
   if (requested && requested !== view) redirect(bookHref(view, books[0], "/dashboard"));
   const bookAccess = accessForDashboardView(view, config);
-  const snap = await readDashboardSnapshot(view);
+  const bookViewer = { ...viewer, access: bookAccess };
   const now = nowMs();
+  const stored = await readDashboardSnapshot(view);
+  const snap = stored ? applyHistoryWindow(stored, bookAccess, new Date(now)) : null;
   const lastBar = snap?.spot;
 
   const header = (
@@ -108,9 +112,16 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const signals = snap?.signals;
   const pending = (signals?.open ?? []).filter((item) => item.status === "PENDING");
   const activeSignals = (signals?.open ?? []).filter((item) => item.status !== "PENDING");
-  const availableCount = ideas ? ideas.available.length : pending.length;
-  const activeCount = ideas ? ideas.active.length : (signals?.active ?? activeSignals.length);
-  const historyCount = ideas ? ideas.historyCount : (signals?.historyCount ?? 0);
+  const openCounts = !ideas && bookAccess.historyDays !== null ? await countOpenSignalsForViewer(bookViewer) : null;
+  const availableCount = ideas ? ideas.available.length : (openCounts?.pending ?? pending.length);
+  const activeCount = ideas ? ideas.active.length : (openCounts?.active ?? signals?.active ?? activeSignals.length);
+  const historyCount = goldBook
+    ? (ideas?.historyCount ?? 0)
+    : silver
+      ? await countHistoryIdeasForAccess(bookAccess)
+      : bookAccess.historyDays !== null
+        ? await countClosedSignalsForAccess(bookAccess)
+        : (signals?.historyCount ?? 0);
 
   return (
     <>
@@ -132,7 +143,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
         <Stat
           label="History"
           value={historyCount}
-          hint={bookAccess.historyDays ? `last ${bookAccess.historyDays} days` : "full history"}
+          hint={historyWindowLabel(bookAccess.historyDays)}
           icon={History}
         />
         <Stat label="Tracked sources" value={ranking.sourceCount} icon={Radar} />

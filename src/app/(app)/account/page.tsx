@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { fmtDate, initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { requireUser } from "@/server/auth/guards";
-import { FEATURE_CATALOG, TIER_LABEL } from "@/server/entitlements/config";
+import { FEATURE_CATALOG, historyWindowLabel, TIER_LABEL } from "@/server/entitlements/config";
 import { appliedComplimentary } from "@/server/entitlements/complimentary";
 import { getViewer } from "@/server/entitlements/service";
 
@@ -107,7 +107,7 @@ export default async function AccountPage() {
                           : subscription
                             ? `${TIER_LABEL[subscription.tier]} membership`
                             : "No active membership"}
-                  {access.historyDays !== null && access.tier ? ` · ${access.historyDays}-day history` : ""}
+                  {access.tier ? ` · ${historyWindowLabel(access.historyDays)}` : ""}
                 </CardDescription>
               </div>
             </div>

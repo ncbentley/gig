@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Signal, SignalOutcome, SignalTarget } from "@/server/db/schema";
 import { presentSignalDetail, presentSourceStats } from "@/server/presenters";
 import { computeSourceStatistics } from "@/server/statistics/compute";
-import { ANONYMOUS, buildAccess, can, freeAccess, gate, historyCutoff, lowestTierWith, requireFeature, tierForSignalTime } from "./access";
+import { ANONYMOUS, buildAccess, can, freeAccess, gate, historyCutoff, inHistoryWindow, lowestTierWith, requireFeature, tierForSignalTime } from "./access";
 import { DEFAULT_TIER_CONFIG, type TierConfig } from "./config";
 
 const config = DEFAULT_TIER_CONFIG;
@@ -169,6 +169,18 @@ describe("access", () => {
 
   it("gold has unlimited history", () => {
     expect(historyCutoff(gold, now)).toBeNull();
+    expect(inHistoryWindow(new Date(now.getTime() - 400 * 86_400_000), gold, now)).toBe(true);
+  });
+
+  it("keeps a call only when it falls inside that plan's history window", () => {
+    const threeDaysAgo = new Date(now.getTime() - 3 * 86_400_000);
+    const eightDaysAgo = new Date(now.getTime() - 8 * 86_400_000);
+    const twoHundredDaysAgo = new Date(now.getTime() - 200 * 86_400_000);
+    expect(inHistoryWindow(threeDaysAgo, basic, now)).toBe(true);
+    expect(inHistoryWindow(eightDaysAgo, basic, now)).toBe(false);
+    expect(inHistoryWindow(eightDaysAgo, silver, now)).toBe(true);
+    expect(inHistoryWindow(twoHundredDaysAgo, silver, now)).toBe(false);
+    expect(inHistoryWindow(twoHundredDaysAgo, gold, now)).toBe(true);
   });
 
   it("names the cheapest plan whose history window covers the signal", () => {

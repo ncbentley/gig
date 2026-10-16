@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, notInArray } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, notInArray, sql } from "drizzle-orm";
 import type { IdeaGlance } from "@/lib/trade-glance";
 import { getDb } from "@/server/db";
 import { consolidatedIdeas, signalTargets, signals, sources } from "@/server/db/schema";
@@ -240,6 +240,19 @@ export async function listIdeasForViewer(viewer: Viewer, _spot: number | null): 
   return rows
     .map((row) => listedIdea(row, asPhase(row.phase)))
     .sort((a, b) => PHASE_RANK[a.phase] - PHASE_RANK[b.phase] || Date.parse(b.newestSignalAt) - Date.parse(a.newestSignalAt));
+}
+
+/** History-section ideas inside the viewer's window. */
+export async function countHistoryIdeasForAccess(access: Viewer["access"]) {
+  const db = await getDb();
+  const cutoff = historyCutoff(access);
+  const conds = [gte(consolidatedIdeas.sourceCount, MIN_CONSOLIDATED_SOURCES), eq(consolidatedIdeas.phase, "history")];
+  if (cutoff) conds.push(gte(consolidatedIdeas.newestSignalAt, cutoff));
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(consolidatedIdeas)
+    .where(and(...conds));
+  return row?.n ?? 0;
 }
 
 export type IdeaForViewer =

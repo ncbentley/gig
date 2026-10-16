@@ -6,7 +6,7 @@ import { runMigrations } from "@/server/db/migrate";
 import { consolidatedIdeas, rawEvents, signals, sources } from "@/server/db/schema";
 import { buildAccess } from "@/server/entitlements/access";
 import { DEFAULT_TIER_CONFIG } from "@/server/entitlements/config";
-import { rebuildConsolidatedIdeas, replaceConsolidatedIdeas, listIdeasForViewer } from "./service";
+import { rebuildConsolidatedIdeas, replaceConsolidatedIdeas, listIdeasForViewer, countHistoryIdeasForAccess } from "./service";
 
 function ideaId(signalIds: string[]) {
   return createHash("sha256").update([...signalIds].sort().join(",")).digest("hex");
@@ -392,5 +392,49 @@ describe("replaceConsolidatedIdeas", () => {
     const listed = await listIdeasForViewer(viewer, null);
     expect(listed.some((idea) => idea.entryMin === 1111)).toBe(false);
     expect(listed.find((idea) => idea.entryMin === 2222)?.phase).toBe("playing-out");
+  });
+
+  it("keeps silver ideas inside 180 days and gold ideas without a cutoff", async () => {
+    const db = await getDb();
+    const now = new Date();
+    const day = 86_400_000;
+    const row = (entryMin: number, ageDays: number) => ({
+      direction: "LONG" as const,
+      entryMin,
+      entryMax: entryMin,
+      stopLoss: null,
+      targets: [] as number[],
+      exitSpreadStops: null,
+      exitSpreadTargets: [] as number[],
+      sourceCount: 3,
+      signalIds: [] as string[],
+      replacedSignalIds: [] as string[],
+      newestSignalAt: new Date(now.getTime() - ageDays * day),
+      phase: "history",
+    });
+    await db.insert(consolidatedIdeas).values([row(3333, 181), row(4444, 1), row(5555, 8)]);
+    const silver = {
+      user: null,
+      access: buildAccess("silver", DEFAULT_TIER_CONFIG),
+      config: DEFAULT_TIER_CONFIG,
+      subscription: null,
+      complimentary: null,
+      viewAs: null,
+    };
+    const silverListed = await listIdeasForViewer(silver, null);
+    expect(silverListed.some((idea) => idea.entryMin === 3333)).toBe(false);
+    expect(silverListed.some((idea) => idea.entryMin === 5555)).toBe(true);
+    expect(silverListed.some((idea) => idea.entryMin === 4444)).toBe(true);
+    expect(await countHistoryIdeasForAccess(silver.access)).toBe(silverListed.filter((idea) => idea.phase === "history").length);
+
+    const basic = { ...silver, access: buildAccess("basic", DEFAULT_TIER_CONFIG) };
+    const basicListed = await listIdeasForViewer(basic, null);
+    expect(basicListed.some((idea) => idea.entryMin === 5555)).toBe(false);
+    expect(basicListed.some((idea) => idea.entryMin === 4444)).toBe(true);
+
+    const gold = { ...silver, access: buildAccess("gold", DEFAULT_TIER_CONFIG) };
+    const goldListed = await listIdeasForViewer(gold, null);
+    expect(goldListed.some((idea) => idea.entryMin === 3333)).toBe(true);
+    expect(goldListed.some((idea) => idea.entryMin === 5555)).toBe(true);
   });
 });

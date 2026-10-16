@@ -2,7 +2,7 @@ import { eq, sql } from "drizzle-orm";
 import { getDb } from "@/server/db";
 import { boardPosts, consolidatedIdeas, dashboardSnapshots, feedRevisions, goldBookEntries, marketDirectionSnapshots, signalTargets, signals, sourceStats } from "@/server/db/schema";
 import { latestMarketDirection } from "@/server/direction/service";
-import { buildAccess, freeAccess } from "@/server/entitlements/access";
+import { buildAccess, freeAccess, historyCutoff, type Access } from "@/server/entitlements/access";
 import { getTierConfig, type Viewer } from "@/server/entitlements/service";
 import { annotateIdeaGlance } from "@/server/ideas/glance";
 import { listIdeasForViewer } from "@/server/ideas/service";
@@ -156,7 +156,41 @@ async function fingerprint() {
     goldBook?.n ?? 0,
     goldBook?.digest ?? "",
     lastBar ? `${lastBar.close.toFixed(2)}@${lastBar.timestamp.toISOString()}` : "",
+    new Date().toISOString().slice(0, 13),
   ].join("|");
+}
+
+function keptByWindow<T>(items: T[], at: (item: T) => string, cutoffMs: number) {
+  return items.filter((item) => {
+    const time = Date.parse(at(item));
+    return Number.isFinite(time) && time >= cutoffMs;
+  });
+}
+
+/** Drops cached rows that have aged out of the plan window since the snapshot was built. */
+export function applyHistoryWindow(cache: DashboardCache, access: Access, now = new Date()): DashboardCache {
+  const cutoff = historyCutoff(access, now);
+  if (!cutoff) return cache;
+  const ms = cutoff.getTime();
+  const signals = cache.signals
+    ? {
+        ...cache.signals,
+        open: keptByWindow(cache.signals.open, (item) => item.signalTime, ms),
+        closed: keptByWindow(cache.signals.closed, (item) => item.signalTime, ms),
+      }
+    : null;
+  const trim = <T extends { newestSignalAt: string }>(book: BookSectionsCache<T> | null) => {
+    if (!book) return null;
+    const history = keptByWindow(book.history, (item) => item.newestSignalAt, ms);
+    return {
+      ...book,
+      available: keptByWindow(book.available, (item) => item.newestSignalAt, ms),
+      active: keptByWindow(book.active, (item) => item.newestSignalAt, ms),
+      history,
+      historyCount: Math.max(0, book.historyCount - (book.history.length - history.length)),
+    };
+  };
+  return { ...cache, signals, ideas: trim(cache.ideas), gold: trim(cache.gold) };
 }
 
 async function buildSnapshot(view: DashboardView, config: Awaited<ReturnType<typeof getTierConfig>>): Promise<DashboardCache> {
