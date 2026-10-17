@@ -9,7 +9,8 @@ import { TopSources } from "@/components/top-sources";
 import { buttonVariants } from "@/components/ui/button";
 import { fmtMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { PASS_PRICE_CENTS } from "@/server/billing/pass";
+import { getCurrentUser } from "@/server/auth";
+import { PASS_PRICE_CENTS, purchasedPass } from "@/server/billing/pass";
 import { listPlans } from "@/server/billing/service";
 import { historyWindowLabel, TIER_LABEL } from "@/server/entitlements/config";
 import { getTierConfig } from "@/server/entitlements/service";
@@ -100,6 +101,17 @@ function crowdRead(items: { direction: string }[]): string {
   return `${Math.max(longs, shorts)} of ${items.length} active calls are ${side}.`;
 }
 
+function PassButton({ used, size, label }: { used: boolean; size: "sm" | "lg"; label: string }) {
+  if (used) return <p className="text-sm text-muted-foreground">This account already used its 10-day pass.</p>;
+  return (
+    <form action={buyPassAction}>
+      <button type="submit" className={cn(buttonVariants({ size }), size === "lg" && "px-6", "w-fit")}>
+        {label} {size === "lg" && <ArrowRight />}
+      </button>
+    </form>
+  );
+}
+
 function planLines(tier: Tier, historyDays: number | null): string[] {
   const history = historyWindowLabel(historyDays);
   if (tier === "basic") return ["Access to eligible signals", history];
@@ -127,18 +139,14 @@ export default async function LandingPage() {
     (silverBook?.ideas?.active ?? []).filter((item) => item.sourceCount >= 3 && hasTradePlan(item.targets.length, item.stopLoss)),
     (item) => item.newestSignalAt,
   );
-  const goldSeen = new Set<string>();
+  const user = await getCurrentUser();
+  const passUsed = user ? Boolean(await purchasedPass(user.id)) : false;
   const goldIdeas = byNewest(
     [...(goldBook?.gold?.available ?? []), ...(goldBook?.gold?.active ?? [])].filter(
-      (item) => item.sourceCount >= 3 && hasTradePlan(item.targets.length, item.stopLoss),
+      (item) => item.sourceCount === 0 && hasTradePlan(item.targets.length, item.stopLoss),
     ),
     (item) => item.newestSignalAt,
-  ).filter((item) => {
-    const key = `${item.direction}:${Math.round(item.entryMin)}`;
-    if (goldSeen.has(key)) return false;
-    goldSeen.add(key);
-    return true;
-  });
+  ).slice(0, 1);
 
   return (
     <>
@@ -166,13 +174,9 @@ export default async function LandingPage() {
             Discover which sources have delivered measurable results, how their trades performed, and what the data reveals about the wider gold-trading landscape.
           </p>
           <div className="mt-8">
-            <form action={buyPassAction}>
-              <button type="submit" className={cn(buttonVariants({ size: "lg" }), "px-6")}>
-                Get the 10-day pass <ArrowRight />
-              </button>
-            </form>
+            <PassButton used={passUsed} size="lg" label="Get the 10-day pass" />
             <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">
-              {fmtMoney(PASS_PRICE_CENTS, "usd")} once for Gold access. It does not renew.
+              {fmtMoney(PASS_PRICE_CENTS, "usd")} once for Gold access. One per account. It does not renew.
             </p>
           </div>
           <dl className="mt-12 flex flex-wrap gap-x-12 gap-y-6">
@@ -319,7 +323,7 @@ export default async function LandingPage() {
             <h3 className="gold-text font-heading text-2xl font-extrabold tracking-tight">Gold</h3>
             <p className="mt-2 max-w-xl text-sm leading-relaxed text-foreground/80">Basic and Silver, plus a shorter list kept only when the book agrees.</p>
             <div className="mt-5">
-              <IdeaList items={goldIdeas.slice(0, 3)} empty="Filtered ideas will show here once the book keeps one." />
+              <IdeaList items={goldIdeas} empty="A composed idea will show here once Gold keeps one." />
             </div>
           </div>
         </div>
@@ -341,17 +345,13 @@ export default async function LandingPage() {
               <span className="font-sans text-sm font-normal text-muted-foreground"> once</span>
             </p>
             <div>
-              <p className="text-sm text-foreground/75">Gold access for 10 days. Does not renew.</p>
+              <p className="text-sm text-foreground/75">Gold access for 10 days. One per account. Does not renew.</p>
               <ul className="mt-3 space-y-1 text-sm text-foreground/85">
                 <li>The full Gold book</li>
                 <li>Full historical access</li>
               </ul>
             </div>
-            <form action={buyPassAction}>
-              <button type="submit" className={cn(buttonVariants({ size: "sm" }), "w-fit")}>
-                Get the pass
-              </button>
-            </form>
+            <PassButton used={passUsed} size="sm" label="Get the pass" />
           </article>
           {PAID.map((tier) => {
             const featured = tier === "gold";
@@ -418,12 +418,8 @@ export default async function LandingPage() {
         </p>
         <p className="mt-6 max-w-xl font-heading text-xl font-extrabold tracking-tight">Gold Intelligence Gateway puts the evidence in front of you.</p>
         <div className="mt-8">
-          <form action={buyPassAction}>
-            <button type="submit" className={cn(buttonVariants({ size: "lg" }), "px-6")}>
-              Get the 10-day pass <ArrowRight />
-            </button>
-          </form>
-          <p className="mt-3 text-sm text-muted-foreground">{fmtMoney(PASS_PRICE_CENTS, "usd")} once for Gold access. It does not renew.</p>
+          <PassButton used={passUsed} size="lg" label="Get the 10-day pass" />
+          <p className="mt-3 text-sm text-muted-foreground">{fmtMoney(PASS_PRICE_CENTS, "usd")} once for Gold access. One per account. It does not renew.</p>
         </div>
         <div className="mt-16">
           <AffiliateStrip placement="landing" />

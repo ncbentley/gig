@@ -12,7 +12,7 @@ import { fmtDate, fmtMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { requireUser } from "@/server/auth/guards";
 import { billingMode, PERIOD_LABEL } from "@/server/billing/config";
-import { PASS_PRICE_CENTS, activePass } from "@/server/billing/pass";
+import { PASS_PRICE_CENTS, activePass, purchasedPass } from "@/server/billing/pass";
 import { getPlan, listUserSubscriptions } from "@/server/billing/service";
 import { appliedComplimentary } from "@/server/entitlements/complimentary";
 import { TIER_LABEL } from "@/server/entitlements/config";
@@ -45,10 +45,11 @@ export default async function BillingPage({ searchParams }: PageProps<"/billing"
   const viewer = await getViewer();
   const sub = viewer.subscription;
   const applied = user.role === "admin" ? null : appliedComplimentary(sub?.tier ?? null, viewer.complimentary);
-  const [plan, history, pass, appliedReferralCode] = await Promise.all([
+  const [plan, history, pass, ownedPass, appliedReferralCode] = await Promise.all([
     sub ? getPlan(sub.tier, sub.period) : null,
     listUserSubscriptions(user.id),
     activePass(user.id),
+    purchasedPass(user.id),
     user.referredByUserId ? referralCodeForUserId(user.referredByUserId) : Promise.resolve(null),
   ]);
   const mode = billingMode();
@@ -70,6 +71,13 @@ export default async function BillingPage({ searchParams }: PageProps<"/billing"
           <CreditCard />
           <AlertTitle>Plan not changed</AlertTitle>
           <AlertDescription>The current membership stayed in place.</AlertDescription>
+        </Alert>
+      )}
+      {sp.checkout === "pass-used" && (
+        <Alert className="mb-4">
+          <CreditCard />
+          <AlertTitle>Pass already used</AlertTitle>
+          <AlertDescription>The 10-day pass is one purchase per account. A monthly plan is how access continues.</AlertDescription>
         </Alert>
       )}
       {sp.checkout === "cancelled" && (
@@ -176,10 +184,12 @@ export default async function BillingPage({ searchParams }: PageProps<"/billing"
           <CardDescription>
             {pass
               ? `Gold access is active on this pass until ${fmtDate(pass.endsAt)}.`
-              : `One-time ${fmtMoney(PASS_PRICE_CENTS, "usd")} for 10 days of Gold access. Does not renew.`}
+              : ownedPass
+                ? "This account already used its 10-day pass. A monthly plan is how access continues."
+                : `One-time ${fmtMoney(PASS_PRICE_CENTS, "usd")} for 10 days of Gold access. One per account. Does not renew.`}
           </CardDescription>
         </CardHeader>
-        {!pass && (
+        {!pass && !ownedPass && (
           <CardFooter>
             <form action={buyPassAction}>
               <Button type="submit">10-Day Full-Access Pass, {fmtMoney(PASS_PRICE_CENTS, "usd")}</Button>

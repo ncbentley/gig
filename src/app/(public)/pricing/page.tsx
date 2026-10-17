@@ -8,7 +8,8 @@ import { buttonVariants } from "@/components/ui/button";
 import { fmtMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { billingMode } from "@/server/billing/config";
-import { PASS_PRICE_CENTS } from "@/server/billing/pass";
+import { getCurrentUser } from "@/server/auth";
+import { PASS_PRICE_CENTS, purchasedPass } from "@/server/billing/pass";
 
 export const metadata: Metadata = { title: "Pricing" };
 
@@ -21,32 +22,38 @@ const FEATURES = [
 
 export default async function PricingPage({ searchParams }: PageProps<"/pricing">) {
   const { period, highlight } = parsePlanParams(await searchParams);
+  const user = await getCurrentUser();
+  const passUsed = user ? Boolean(await purchasedPass(user.id)) : false;
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 md:py-10">
       <PageHeader
         icon={Package}
         title="Choose your package"
-        description="Basic is every signal for 7 days. Silver and Gold are tighter readings of the same calls. The 10-day pass is Gold access, paid once."
+        description="Basic is every signal for 7 days. Silver and Gold are tighter readings of the same calls. The 10-day pass is Gold access, one purchase per account."
         features={FEATURES}
       />
 
       <p className="mt-7 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-        Monthly plans renew until you cancel. The 10-day pass is a single payment for Gold access and does not renew.
+        Monthly plans renew until you cancel. The 10-day pass is one purchase per account and does not renew.
       </p>
 
       <article className="mt-8 flex flex-col gap-4 rounded-2xl px-6 py-6 ring-1 ring-primary/55 panel-gold sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="font-heading text-xl font-extrabold tracking-tight">10-day full-access pass</h2>
           <p className="mt-1 max-w-xl text-sm leading-relaxed text-foreground/80">
-            {fmtMoney(PASS_PRICE_CENTS, "usd")} once for 10 days of Gold access, including full history. It does not renew.
+            {fmtMoney(PASS_PRICE_CENTS, "usd")} once for 10 days of Gold access, including full history. One per account. It does not renew.
           </p>
         </div>
-        <form action={buyPassAction}>
-          <button type="submit" className={cn(buttonVariants({ size: "lg" }), "w-full sm:w-auto")}>
-            Get the pass
-          </button>
-        </form>
+        {passUsed ? (
+          <p className="text-sm text-muted-foreground">This account already used its 10-day pass.</p>
+        ) : (
+          <form action={buyPassAction}>
+            <button type="submit" className={cn(buttonVariants({ size: "lg" }), "w-full sm:w-auto")}>
+              Get the pass
+            </button>
+          </form>
+        )}
       </article>
 
       <div className="mt-6">

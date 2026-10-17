@@ -1,7 +1,7 @@
 import { Check, ShieldCheck } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { confirmMockCheckoutAction, confirmMockPassAction } from "@/app/actions/billing";
 import { TIER_ICON } from "@/components/signal-bits";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -12,7 +12,7 @@ import { ReferralCodeField } from "@/components/referral-code-field";
 import { requireUser } from "@/server/auth/guards";
 import { referralCodeForUserId } from "@/server/referrals/attribute";
 import { billingMode, PERIOD_LABEL } from "@/server/billing/config";
-import { PASS_PRICE_CENTS } from "@/server/billing/pass";
+import { PASS_PRICE_CENTS, purchasedPass } from "@/server/billing/pass";
 import { getPlan } from "@/server/billing/service";
 import { PERIODS, TIERS, type BillingPeriod, type Tier } from "@/server/db/schema";
 import { FEATURE_CATALOG, TIER_LABEL } from "@/server/entitlements/config";
@@ -28,6 +28,7 @@ export default async function MockCheckoutPage({ searchParams }: PageProps<"/bil
   const appliedReferralCode = user.referredByUserId ? await referralCodeForUserId(user.referredByUserId) : null;
 
   if (sp.pass === "1") {
+    if (await purchasedPass(user.id)) redirect("/billing?checkout=pass-used");
     const config = await getTierConfig();
     const TierIcon = TIER_ICON.gold;
 

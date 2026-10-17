@@ -161,7 +161,10 @@ export const accessPasses = pgTable(
     endsAt: ts("ends_at").notNull(),
     createdAt: createdAt(),
   },
-  (t) => [index("access_passes_user_idx").on(t.userId)],
+  (t) => [
+    index("access_passes_user_idx").on(t.userId),
+    uniqueIndex("access_passes_one_paid_per_user_idx").on(t.userId).where(sql`${t.status} = 'paid'`),
+  ],
 );
 
 export const referralFees = pgTable(

@@ -5,7 +5,7 @@ import { runMigrations } from "@/server/db/migrate";
 import { accessPasses, users } from "@/server/db/schema";
 import { installAnalyticsSender } from "@/server/analytics/posthog";
 import { PASS_MS } from "@/server/entitlements/trial";
-import { PASS_PRICE_CENTS, activePass, completeMockPass, refundPass, refundPassForStripeCharge } from "./pass";
+import { PASS_ALREADY_USED, PASS_PRICE_CENTS, activePass, completeMockPass, grantPassFromStripe, refundPass, refundPassForStripeCharge } from "./pass";
 
 beforeAll(async () => {
   await runMigrations();
@@ -46,7 +46,10 @@ describe("completeMockPass", () => {
     const active = await activePass(user.id, now);
     expect(active?.id).toBe(pass.id);
 
-    await expect(completeMockPass(user.id, now)).rejects.toThrow("A full-access pass is already active.");
+    await expect(completeMockPass(user.id, now)).rejects.toThrow(PASS_ALREADY_USED);
+
+    const afterExpiry = new Date(pass.endsAt.getTime() + 1000);
+    await expect(completeMockPass(user.id, afterExpiry)).rejects.toThrow(PASS_ALREADY_USED);
 
     const purchased = events.find((event) => event.event === "pass_purchased");
     expect(purchased).toMatchObject({
@@ -71,6 +74,32 @@ describe("refundPass", () => {
 
     const [row] = await db.select().from(accessPasses).where(eq(accessPasses.id, pass.id));
     expect(row?.status).toBe("refunded");
+    await expect(completeMockPass(user.id, new Date(now.getTime() + PASS_MS))).rejects.toThrow(PASS_ALREADY_USED);
+
+    await db.delete(accessPasses).where(eq(accessPasses.userId, user.id));
+    await db.delete(users).where(eq(users.id, user.id));
+  });
+});
+
+describe("grantPassFromStripe", () => {
+  it("does not open a second pass after the first one has ended", async () => {
+    delete process.env.STRIPE_SECRET_KEY;
+    const db = await getDb();
+    const [user] = await db.insert(users).values({ email: `stripe-pass-${crypto.randomUUID()}@example.com`, passwordHash: "x" }).returning();
+    const now = new Date("2026-10-01T12:00:00.000Z");
+
+    const first = await grantPassFromStripe({ userId: user.id, paymentId: "cs_first", paidAt: now });
+    expect(first?.status).toBe("paid");
+
+    const second = await grantPassFromStripe({
+      userId: user.id,
+      paymentId: "cs_second",
+      paidAt: new Date(now.getTime() + PASS_MS + 1000),
+    });
+    expect(second).toBeNull();
+
+    const rows = await db.select().from(accessPasses).where(eq(accessPasses.userId, user.id));
+    expect(rows).toHaveLength(1);
 
     await db.delete(accessPasses).where(eq(accessPasses.userId, user.id));
     await db.delete(users).where(eq(users.id, user.id));

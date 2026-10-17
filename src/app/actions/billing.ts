@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/server/auth";
-import { completeMockPass, startPassCheckout } from "@/server/billing/pass";
+import { PASS_ALREADY_USED, completeMockPass, startPassCheckout } from "@/server/billing/pass";
 import { completeMockCheckout, openBillingPortal, setCancelAtPeriodEnd, startCheckout } from "@/server/billing/service";
 import { PERIODS, TIERS, type BillingPeriod, type Tier } from "@/server/db/schema";
 import { setReferrer } from "@/server/referrals/attribute";
@@ -23,15 +23,26 @@ export async function buyPassAction() {
   const user = await getCurrentUser();
   if (!user) redirect("/signup?next=%2Fbilling");
   if (!user.emailVerifiedAt) redirect(`/check-email?email=${encodeURIComponent(user.email)}&reason=checkout`);
-  const { url } = await startPassCheckout(user);
-  redirect(url);
+  try {
+    const { url } = await startPassCheckout(user);
+    redirect(url);
+  } catch (err) {
+    if (typeof err === "object" && err !== null && "digest" in err && String((err as { digest?: string }).digest).startsWith("NEXT_REDIRECT")) throw err;
+    if (err instanceof Error && err.message === PASS_ALREADY_USED) redirect("/billing?checkout=pass-used");
+    throw err;
+  }
 }
 
 export async function confirmMockPassAction() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (!user.emailVerifiedAt) redirect(`/check-email?email=${encodeURIComponent(user.email)}&reason=checkout`);
-  await completeMockPass(user.id);
+  try {
+    await completeMockPass(user.id);
+  } catch (err) {
+    if (err instanceof Error && err.message === PASS_ALREADY_USED) redirect("/billing?checkout=pass-used");
+    throw err;
+  }
   redirect("/billing?checkout=success");
 }
 

@@ -176,6 +176,13 @@
       "when": 1792713600000,
       "tag": "0024_one_pending_withdrawal",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1792800000000,
+      "tag": "0025_one_pass_per_user",
+      "breakpoints": true
     }
   ]
 }

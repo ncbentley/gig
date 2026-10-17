@@ -9,6 +9,8 @@ import { getEntitledSubscription, getStripe } from "./service";
 
 export const PASS_PRICE_CENTS = 1000;
 
+export const PASS_ALREADY_USED = "The 10-day pass is one purchase per account.";
+
 export async function activePass(userId: string, now = new Date()) {
   const db = await getDb();
   const [row] = await db
@@ -19,9 +21,27 @@ export async function activePass(userId: string, now = new Date()) {
   return row ?? null;
 }
 
+/** Any pass on the account, including one that already ended or was refunded. */
+export async function purchasedPass(userId: string) {
+  const db = await getDb();
+  const [row] = await db.select().from(accessPasses).where(eq(accessPasses.userId, userId)).limit(1);
+  return row ?? null;
+}
+
+function isUniqueViolation(error: unknown) {
+  const seen = new Set<unknown>();
+  let current: unknown = error;
+  while (current && typeof current === "object" && !seen.has(current)) {
+    seen.add(current);
+    if ("code" in current && (current as { code: string }).code === "23505") return true;
+    current = "cause" in current ? (current as { cause?: unknown }).cause : undefined;
+  }
+  return false;
+}
+
 export async function completeMockPass(userId: string, now = new Date()) {
   if (billingMode() !== "mock") throw new Error("Mock checkout is disabled when Stripe is configured");
-  if (await activePass(userId, now)) throw new Error("A full-access pass is already active.");
+  if (await purchasedPass(userId)) throw new Error(PASS_ALREADY_USED);
   const db = await getDb();
   const startsAt = now;
   const endsAt = new Date(now.getTime() + PASS_MS);
@@ -44,7 +64,7 @@ export async function completeMockPass(userId: string, now = new Date()) {
 
 export async function startPassCheckout(user: { id: string; email: string }) {
   const now = new Date();
-  if (await activePass(user.id, now)) throw new Error("A full-access pass is already active.");
+  if (await purchasedPass(user.id)) throw new Error(PASS_ALREADY_USED);
   await trackEvent("checkout_started", user.id, { kind: "pass", mode: billingMode() });
 
   if (billingMode() === "mock") {
@@ -75,28 +95,33 @@ export async function startPassCheckout(user: { id: string; email: string }) {
 }
 
 export async function grantPassFromStripe(input: { userId: string; paymentId: string; paidAt: Date }) {
-  if (await activePass(input.userId, input.paidAt)) return null;
+  if (await purchasedPass(input.userId)) return null;
   const db = await getDb();
   const startsAt = input.paidAt;
   const endsAt = new Date(input.paidAt.getTime() + PASS_MS);
-  const [pass] = await db
-    .insert(accessPasses)
-    .values({
-      userId: input.userId,
-      amountCents: PASS_PRICE_CENTS,
-      currency: "usd",
-      status: "paid",
-      provider: "stripe",
-      providerPaymentId: input.paymentId,
-      startsAt,
-      endsAt,
-    })
-    .onConflictDoNothing({ target: accessPasses.providerPaymentId })
-    .returning();
-  if (pass) {
-    await trackEvent("pass_purchased", input.userId, { amountCents: PASS_PRICE_CENTS, provider: "stripe" });
+  try {
+    const [pass] = await db
+      .insert(accessPasses)
+      .values({
+        userId: input.userId,
+        amountCents: PASS_PRICE_CENTS,
+        currency: "usd",
+        status: "paid",
+        provider: "stripe",
+        providerPaymentId: input.paymentId,
+        startsAt,
+        endsAt,
+      })
+      .onConflictDoNothing({ target: accessPasses.providerPaymentId })
+      .returning();
+    if (pass) {
+      await trackEvent("pass_purchased", input.userId, { amountCents: PASS_PRICE_CENTS, provider: "stripe" });
+    }
+    return pass ?? null;
+  } catch (error) {
+    if (isUniqueViolation(error)) return null;
+    throw error;
   }
-  return pass ?? null;
 }
 
 export async function refundPass(providerPaymentId: string) {
