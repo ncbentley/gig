@@ -8,7 +8,7 @@ export function AuthCard({ title, description, children, footer }: { title: stri
       <Image src="/brand/hero-gold.jpg" alt="" fill loading="eager" sizes="100vw" className="-z-10 object-cover object-[78%_50%] opacity-45" />
       <div className="absolute inset-0 -z-10 bg-[radial-gradient(ellipse_60%_55%_at_50%_40%,rgb(4_9_20/0.55),rgb(4_9_20/0.92))]" />
       <div className="w-full max-w-sm">
-        <BrandLockup className="mb-6" />
+        <BrandLockup className="mb-6 w-56" />
         <Card className="rounded-2xl bg-[#0a1428]/85 shadow-[0_0_44px_-10px_rgb(245_197_66/0.45)] ring-primary/40 backdrop-blur-md [--card-spacing:--spacing(6)]">
           <CardHeader className="text-center">
             <CardTitle className="gold-text text-2xl font-extrabold">{title}</CardTitle>

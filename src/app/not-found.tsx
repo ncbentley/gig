@@ -8,7 +8,7 @@ export default function NotFound() {
     <div className="relative isolate flex min-h-svh flex-col items-center justify-center overflow-hidden px-4 py-16 text-center">
       <Image src="/brand/hero-gold.jpg" alt="" fill loading="eager" sizes="100vw" className="-z-10 object-cover object-[78%_50%] opacity-40" />
       <div className="absolute inset-0 -z-10 bg-[radial-gradient(ellipse_55%_50%_at_50%_45%,rgb(4_9_20/0.6),rgb(4_9_20/0.94))]" />
-      <BrandLockup />
+      <BrandLockup className="w-60" />
       <p className="gold-text mt-10 font-heading text-8xl font-extrabold leading-none tracking-tight drop-shadow-[0_4px_24px_rgb(245_197_66/0.35)] md:text-9xl" aria-hidden>
         404
       </p>

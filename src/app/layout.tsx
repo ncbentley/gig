@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
-import { Cinzel, Geist, Geist_Mono, Montserrat } from "next/font/google";
+import { Geist, Geist_Mono, Montserrat } from "next/font/google";
 import { Suspense } from "react";
-import { BrandDefs } from "@/components/brand";
 import { PageView } from "@/components/page-view";
 import { persistIncomingTouch } from "@/server/analytics/persist";
 import { Toaster } from "@/components/ui/sonner";
@@ -11,7 +10,6 @@ import "./globals.css";
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 const montserrat = Montserrat({ variable: "--font-montserrat", subsets: ["latin"] });
-const cinzel = Cinzel({ variable: "--font-cinzel", subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: { default: "Gold Intelligence Gateway — Gold signal intelligence", template: "%s · Gold Intelligence Gateway" },
@@ -26,9 +24,8 @@ async function CaptureAttribution() {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`dark ${geistSans.variable} ${geistMono.variable} ${montserrat.variable} ${cinzel.variable} h-full antialiased`}>
+    <html lang="en" className={`dark ${geistSans.variable} ${geistMono.variable} ${montserrat.variable} h-full antialiased`}>
       <body className="flex min-h-full flex-col">
-        <BrandDefs />
         <Suspense fallback={null}>
           <CaptureAttribution />
         </Suspense>

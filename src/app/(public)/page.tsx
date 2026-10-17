@@ -3,6 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { buyPassAction } from "@/app/actions/billing";
 import { AffiliateStrip } from "@/components/affiliate-strip";
+import { IdeaList } from "@/components/idea-list";
 import { SignalList } from "@/components/signal-list";
 import { TopSources } from "@/components/top-sources";
 import { buttonVariants } from "@/components/ui/button";
@@ -12,6 +13,7 @@ import { PASS_PRICE_CENTS } from "@/server/billing/pass";
 import { listPlans } from "@/server/billing/service";
 import { historyWindowLabel, TIER_LABEL } from "@/server/entitlements/config";
 import { getTierConfig } from "@/server/entitlements/service";
+import { readDashboardSnapshot } from "@/server/feed/snapshot";
 import { listPublicSampleSignals, listSources } from "@/server/signals/queries";
 import { getTopSources } from "@/server/statistics/service";
 import type { Tier } from "@/server/db/schema";
@@ -74,6 +76,30 @@ const TRUST = [
   "Historical outcomes are not predictions or guarantees of future results.",
 ];
 
+const TIER_TYPE: Record<(typeof PAID)[number], string> = {
+  basic: "text-white",
+  silver: "silver-text",
+  gold: "gold-text",
+};
+
+/** A public row needs a stop and a short target list. Live books also contain calls with no stop, or a dozen targets from a bad parse. */
+function hasTradePlan(targetCount: number, stopLoss: number | null) {
+  return stopLoss != null && targetCount >= 1 && targetCount <= 9;
+}
+
+function byNewest<T>(items: T[], time: (item: T) => string) {
+  return [...items].sort((a, b) => Date.parse(time(b)) - Date.parse(time(a)));
+}
+
+function crowdRead(items: { direction: string }[]): string {
+  const longs = items.filter((item) => item.direction === "LONG").length;
+  const shorts = items.length - longs;
+  if (items.length === 0) return "No active calls right now.";
+  if (longs === shorts) return `${items.length} active calls, split evenly. A mixed book is a weaker read.`;
+  const side = longs > shorts ? "long" : "short";
+  return `${Math.max(longs, shorts)} of ${items.length} active calls are ${side}.`;
+}
+
 function planLines(tier: Tier, historyDays: number | null): string[] {
   const history = historyWindowLabel(historyDays);
   if (tier === "basic") return ["Access to eligible signals", history];
@@ -83,9 +109,36 @@ function planLines(tier: Tier, historyDays: number | null): string[] {
 
 export default async function LandingPage() {
   const config = await getTierConfig();
-  const [samples, sources, plans] = await Promise.all([listPublicSampleSignals(config), listSources(), listPlans()]);
+  const [samples, sources, plans, basicBook, silverBook, goldBook] = await Promise.all([
+    listPublicSampleSignals(config),
+    listSources(),
+    listPlans(),
+    readDashboardSnapshot("basic"),
+    readDashboardSnapshot("silver"),
+    readDashboardSnapshot("gold"),
+  ]);
   const { top, eligibleCount, sourceCount, totalClosed } = await getTopSources(sources.map((s) => s.id), 8);
   const monthly = new Map(plans.filter((p) => p.period === "monthly").map((p) => [p.tier, p]));
+  const basicActive = byNewest(
+    (basicBook?.signals?.open ?? []).filter((item) => item.status !== "PENDING" && hasTradePlan(item.targets.length, item.stopLoss)),
+    (item) => item.signalTime,
+  );
+  const silverIdeas = byNewest(
+    (silverBook?.ideas?.active ?? []).filter((item) => item.sourceCount >= 3 && hasTradePlan(item.targets.length, item.stopLoss)),
+    (item) => item.newestSignalAt,
+  );
+  const goldSeen = new Set<string>();
+  const goldIdeas = byNewest(
+    [...(goldBook?.gold?.available ?? []), ...(goldBook?.gold?.active ?? [])].filter(
+      (item) => item.sourceCount >= 3 && hasTradePlan(item.targets.length, item.stopLoss),
+    ),
+    (item) => item.newestSignalAt,
+  ).filter((item) => {
+    const key = `${item.direction}:${Math.round(item.entryMin)}`;
+    if (goldSeen.has(key)) return false;
+    goldSeen.add(key);
+    return true;
+  });
 
   return (
     <>
@@ -240,6 +293,38 @@ export default async function LandingPage() {
         </div>
       </section>
 
+      <section className="border-b border-primary/15">
+        <div className="mx-auto max-w-6xl px-4 py-20">
+          <h2 className="max-w-[18ch] font-heading text-3xl font-extrabold tracking-[-0.03em] md:text-4xl">What each level shows.</h2>
+          <p className="mt-4 max-w-xl text-pretty leading-relaxed text-muted-foreground">One set of calls. Each level keeps less of it.</p>
+
+          <div className="mt-14">
+            <h3 className="font-heading text-2xl font-extrabold tracking-tight text-white">Basic</h3>
+            <p className="mt-2 max-w-xl text-sm leading-relaxed text-foreground/80">Every call, side by side. When most of them point the same way, that is the crowd.</p>
+            <p className="mt-3 font-heading text-lg font-extrabold tracking-tight">{crowdRead(basicActive)}</p>
+            <div className="mt-5">
+              <SignalList items={basicActive.slice(0, 6)} empty="Active calls will show here once the book has open trades." />
+            </div>
+          </div>
+
+          <div className="mt-16">
+            <h3 className="silver-text font-heading text-2xl font-extrabold tracking-tight">Silver</h3>
+            <p className="mt-2 max-w-xl text-sm leading-relaxed text-foreground/80">The same calls, grouped. Nearby entries become one idea, so the list is shorter.</p>
+            <div className="mt-5">
+              <IdeaList items={silverIdeas.slice(0, 4)} empty="Grouped ideas will show here once nearby calls line up." />
+            </div>
+          </div>
+
+          <div className="mt-16">
+            <h3 className="gold-text font-heading text-2xl font-extrabold tracking-tight">Gold</h3>
+            <p className="mt-2 max-w-xl text-sm leading-relaxed text-foreground/80">Basic and Silver, plus a shorter list kept only when the book agrees.</p>
+            <div className="mt-5">
+              <IdeaList items={goldIdeas.slice(0, 3)} empty="Filtered ideas will show here once the book keeps one." />
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section className="mx-auto max-w-6xl px-4 py-20">
         <h2 className="max-w-[16ch] font-heading text-3xl font-extrabold tracking-[-0.03em] md:text-4xl">Start exploring. Go deeper when you&apos;re ready.</h2>
         <p className="mt-4 max-w-xl text-pretty leading-relaxed text-muted-foreground">
@@ -248,10 +333,10 @@ export default async function LandingPage() {
         <div className="mt-10 border-t border-primary/20">
           <article className="grid gap-4 border-b border-primary/40 py-7 md:grid-cols-[11rem_11rem_minmax(0,1fr)_auto] md:items-start md:gap-8">
             <div>
-              <p className="mb-1 text-sm font-semibold text-primary">One time</p>
-              <h3 className="gold-text font-heading text-2xl font-extrabold tracking-tight">10-day pass</h3>
+              <p className="mb-1 text-sm font-semibold text-win">One time</p>
+              <h3 className="font-heading text-2xl font-extrabold tracking-tight text-win">10-day pass</h3>
             </div>
-            <p className="gold-text font-heading text-3xl font-extrabold tabular-nums tracking-tight">
+            <p className="font-heading text-3xl font-extrabold tabular-nums tracking-tight text-win">
               {fmtMoney(PASS_PRICE_CENTS, "usd")}
               <span className="font-sans text-sm font-normal text-muted-foreground"> once</span>
             </p>
@@ -281,9 +366,9 @@ export default async function LandingPage() {
               >
                 <div>
                   {featured && <p className="mb-1 text-sm font-semibold text-primary">Deeper access</p>}
-                  <h3 className={cn("font-heading text-2xl font-extrabold tracking-tight", featured && "gold-text")}>{TIER_LABEL[tier]}</h3>
+                  <h3 className={cn("font-heading text-2xl font-extrabold tracking-tight", TIER_TYPE[tier])}>{TIER_LABEL[tier]}</h3>
                 </div>
-                <p className={cn("font-heading text-3xl font-extrabold tabular-nums tracking-tight", featured && "gold-text")}>
+                <p className={cn("font-heading text-3xl font-extrabold tabular-nums tracking-tight", TIER_TYPE[tier])}>
                   {plan ? fmtMoney(plan.amountCents, plan.currency) : "—"}
                   <span className="font-sans text-sm font-normal text-muted-foreground"> / month</span>
                 </p>

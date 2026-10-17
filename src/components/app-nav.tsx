@@ -100,7 +100,7 @@ export function Sidebar({ isAdmin, reviewCount, footer, account }: { isAdmin: bo
   return (
     <aside className="sticky top-0 hidden h-svh w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar/95 lg:flex">
       <div className="border-b border-sidebar-border px-4 pb-4 pt-5">
-        <BrandLockup href="/dashboard" />
+        <BrandLockup href="/dashboard" className="w-full" />
       </div>
       <div className="flex-1 overflow-y-auto px-3 py-4">
         <NavLinks isAdmin={isAdmin} reviewCount={reviewCount} />
@@ -125,7 +125,7 @@ export function TopBar({ isAdmin, reviewCount, footer, account }: { isAdmin: boo
         <SheetContent side="left" className="w-72 gap-0 overflow-y-auto bg-sidebar p-0">
           <SheetTitle className="sr-only">Navigation</SheetTitle>
           <div className="border-b border-sidebar-border px-4 pb-4 pt-5">
-            <BrandLockup href="/dashboard" />
+            <BrandLockup href="/dashboard" className="w-full" />
           </div>
           <div className="px-3 py-4">
             <NavLinks isAdmin={isAdmin} reviewCount={reviewCount} onNavigate={() => setOpen(false)} />
