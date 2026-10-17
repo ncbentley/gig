@@ -24,7 +24,7 @@ Signals are read from Telegram channels through a Telegram **user account**. A b
 
 ### Ad bot
 
-Telegram ads open a separate bot. It answers every private message with a welcome and a link to this site. `utm_source` is `telegram`, `utm_medium` is `cpc`, and `utm_campaign` is the `/start` code when that code is one token of letters, digits, underscores, or hyphens. The bot does not read channels and does not use the admin Telegram session.
+Telegram ads open a separate bot. It answers every private text message with a welcome and a link to this site. `utm_source` is `telegram`, `utm_medium` is `cpc`, and `utm_campaign` is the `/start` code when that code is one token of letters, digits, underscores, or hyphens. The bot does not read channels and does not use the admin Telegram session.
 
 Create the bot in BotFather. Set `TELEGRAM_AD_BOT_TOKEN`, `TELEGRAM_AD_BOT_WEBHOOK_SECRET`, and `APP_URL`, then run `pnpm telegram:ad-bot` once. That registers `POST /api/telegram/ad-bot`. The ad link is `https://t.me/<bot>?start=<code>`.
 
