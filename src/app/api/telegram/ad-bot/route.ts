@@ -32,6 +32,8 @@ export async function POST(req: Request) {
     return new Response("Invalid JSON.", { status: 400 });
   }
 
+  if (!update || typeof update !== "object") return new Response("Ignored.", { status: 200 });
+
   const message = update.message;
   const chatId = message?.chat?.id;
   if (message?.chat?.type !== "private" || typeof message.text !== "string" || typeof chatId !== "number") {
@@ -44,7 +46,7 @@ export async function POST(req: Request) {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ chat_id: chatId, text: adBotReply(message.text, appUrl()) }),
     });
-    if (!res.ok) return new Response("Send failed.", { status: 500 });
+    if (res.status !== 200) return new Response("Send failed.", { status: 500 });
   } catch {
     return new Response("Send failed.", { status: 500 });
   }

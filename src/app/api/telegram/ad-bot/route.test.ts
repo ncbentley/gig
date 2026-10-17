@@ -61,6 +61,26 @@ describe("POST /api/telegram/ad-bot", () => {
     expect(res.status).toBe(400);
   });
 
+  it("ignores a null update", async () => {
+    process.env.TELEGRAM_AD_BOT_TOKEN = TOKEN;
+    process.env.TELEGRAM_AD_BOT_WEBHOOK_SECRET = SECRET;
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const res = await POST(
+      new Request("http://localhost/api/telegram/ad-bot", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-telegram-bot-api-secret-token": SECRET,
+        },
+        body: "null",
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("Ignored.");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("ignores a group message", async () => {
     process.env.TELEGRAM_AD_BOT_TOKEN = TOKEN;
     process.env.TELEGRAM_AD_BOT_WEBHOOK_SECRET = SECRET;
@@ -103,6 +123,14 @@ describe("POST /api/telegram/ad-bot", () => {
     vi.stubGlobal("fetch", vi.fn(async () => {
       throw new Error("network");
     }));
+    expect((await POST(update({ text: "hello", chat: { id: 42, type: "private" } }))).status).toBe(500);
+  });
+
+  it("returns 500 when Telegram answers with a status other than 200", async () => {
+    process.env.TELEGRAM_AD_BOT_TOKEN = TOKEN;
+    process.env.TELEGRAM_AD_BOT_WEBHOOK_SECRET = SECRET;
+    process.env.APP_URL = "https://goldintelligencegateway.com";
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 201 })));
     expect((await POST(update({ text: "hello", chat: { id: 42, type: "private" } }))).status).toBe(500);
   });
 });
