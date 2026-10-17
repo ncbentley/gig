@@ -22,6 +22,12 @@ Sign in at `/login` as `admin@example.com` / `admin12345`. Set `SEED_ADMIN_EMAIL
 
 Signals are read from Telegram channels through a Telegram **user account**. A bot can only read channels where it is an admin; a user account can read any channel it has joined, including private ones. Use a dedicated account (a spare SIM or eSIM is fine) rather than your personal one. The app only reads; it never posts.
 
+### Ad bot
+
+Telegram ads open a separate bot. It answers every private message with a welcome and a link to this site. `utm_source` is `telegram`, `utm_medium` is `cpc`, and `utm_campaign` is the `/start` code when that code is one token of letters, digits, underscores, or hyphens. The bot does not read channels and does not use the admin Telegram session.
+
+Create the bot in BotFather. Set `TELEGRAM_AD_BOT_TOKEN`, `TELEGRAM_AD_BOT_WEBHOOK_SECRET`, and `APP_URL`, then run `pnpm telegram:ad-bot` once. That registers `POST /api/telegram/ad-bot`. The ad link is `https://t.me/<bot>?start=<code>`.
+
 1. On [my.telegram.org/apps](https://my.telegram.org/apps), sign in with that account's phone number and create an application. Any name works. Note the **api_id** and **api_hash**.
 2. In the app, open **Admin, then Telegram** (`/admin/telegram`). Enter the api_id, api_hash and phone number, then click **Send login code**.
 3. Enter the code Telegram sends to the account. If the account has two-step verification, you are asked for its password next.
