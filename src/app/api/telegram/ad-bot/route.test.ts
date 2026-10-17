@@ -95,14 +95,14 @@ describe("POST /api/telegram/ad-bot", () => {
     process.env.TELEGRAM_AD_BOT_TOKEN = TOKEN;
     process.env.TELEGRAM_AD_BOT_WEBHOOK_SECRET = SECRET;
     process.env.APP_URL = "https://goldintelligencegateway.com";
-    const fetchMock = vi.fn(async () => new Response("{}", { status: 200 }));
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => new Response("{}", { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     const res = await POST(update({ text: "/start spring_push", chat: { id: 42, type: "private" } }));
     expect(res.status).toBe(200);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe("https://api.telegram.org/bottest-token/sendMessage");
-    expect(JSON.parse(String(init.body))).toEqual({
+    expect(JSON.parse(String(init?.body))).toEqual({
       chat_id: 42,
       text: [
         "Done following a thousand traders?",
