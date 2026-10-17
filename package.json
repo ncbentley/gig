@@ -12,7 +12,8 @@
     "db:generate": "drizzle-kit generate",
     "db:setup": "tsx scripts/seed.ts",
     "db:reset": "tsx scripts/seed.ts --reset",
-    "queue": "tsx scripts/queue-worker.ts"
+    "queue": "tsx scripts/queue-worker.ts",
+    "telegram:ad-bot": "tsx scripts/register-ad-bot-webhook.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",

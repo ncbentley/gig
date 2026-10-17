@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { adBotCampaign, adBotLink, adBotReply } from "./ad-bot";
+import { adBotCampaign, adBotLink, adBotReply, adBotWebhookRequest } from "./ad-bot";
 
 const APP = "https://goldintelligencegateway.com";
 
@@ -31,5 +31,16 @@ describe("ad bot reply", () => {
     expect(adBotCampaign(`/start ${"a".repeat(65)}`)).toBeNull();
     expect(adBotReply("hello", `${APP}/`)).toContain(plain);
     expect(adBotReply("hello", `${APP}/`)).not.toContain("utm_campaign");
+  });
+
+  it("builds the setWebhook request for the public route", () => {
+    expect(adBotWebhookRequest("https://goldintelligencegateway.com/", "hook-secret")).toEqual({
+      url: "https://goldintelligencegateway.com/api/telegram/ad-bot",
+      body: {
+        url: "https://goldintelligencegateway.com/api/telegram/ad-bot",
+        secret_token: "hook-secret",
+        allowed_updates: ["message"],
+      },
+    });
   });
 });

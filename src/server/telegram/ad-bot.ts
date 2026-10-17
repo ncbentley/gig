@@ -20,3 +20,15 @@ export function adBotLink(appUrl: string, campaign: string | null): string {
 export function adBotReply(text: string, appUrl: string): string {
   return `${WELCOME}\n\n${adBotLink(appUrl, adBotCampaign(text))}`;
 }
+
+export function adBotWebhookRequest(appUrl: string, secret: string) {
+  const url = `${appUrl.replace(/\/+$/, "")}/api/telegram/ad-bot`;
+  return {
+    url,
+    body: {
+      url,
+      secret_token: secret,
+      allowed_updates: ["message"] as const,
+    },
+  };
+}
