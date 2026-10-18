@@ -10,28 +10,14 @@ import {
   type BillingPeriod,
   type Tier,
 } from "@/server/db/schema";
-import { createReferralCode } from "./code";
+import { getComplimentaryTier } from "@/server/entitlements/grants";
+import { ensureReferralCode } from "./assign";
 import { feeForPayment, lowerTier, requestableBalance, reverseFee } from "./money";
 
 export type ReferralFeeRow = typeof referralFees.$inferSelect;
 
-async function assignReferralCodeIfNeeded(userId: string, referralCode: string | null, period: BillingPeriod) {
-  if (referralCode || period !== "monthly") return;
-  const db = await getDb();
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const code = createReferralCode();
-    try {
-      await db
-        .update(users)
-        .set({ referralCode: code })
-        .where(and(eq(users.id, userId), isNull(users.referralCode)));
-      return;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (!message.includes("unique") && !message.includes("duplicate")) throw error;
-    }
-  }
-  throw new Error("Could not assign a unique referral code");
+function higherTier(a: Tier, b: Tier): Tier {
+  return lowerTier(a, b) === a ? b : a;
 }
 
 function referrerEligible(
@@ -60,7 +46,7 @@ export async function recordCollectedPayment(input: {
   const [payer] = await db.select().from(users).where(eq(users.id, input.userId));
   if (!payer) return null;
 
-  await assignReferralCodeIfNeeded(payer.id, payer.referralCode, input.period);
+  if (input.period === "monthly") await ensureReferralCode(payer.id);
 
   if (input.period === "monthly") {
     await db
@@ -79,20 +65,22 @@ export async function recordCollectedPayment(input: {
   if (!payer.referredByUserId || payer.referredByUserId === payer.id) return null;
 
   const referrerSub = await getEntitledSubscription(payer.referredByUserId, now);
-  const eligible = referrerEligible(referrerSub, now);
+  const paidTier = referrerEligible(referrerSub, now) ? referrerSub.tier : null;
+  const grant = await getComplimentaryTier(payer.referredByUserId);
+  const referrerTier = paidTier && grant ? higherTier(paidTier, grant) : paidTier ?? grant;
   const plan = await getPlan(input.tier, "monthly");
   if (!plan?.active) return null;
 
   const amountCents = feeForPayment({
     collectedCents: input.collectedCents,
     customerCatalogCents: plan.amountCents,
-    referrerTier: referrerSub?.tier ?? "basic",
+    referrerTier: referrerTier ?? "basic",
     customerTier: input.tier,
-    referrerEligible: eligible,
+    referrerEligible: referrerTier !== null,
   });
-  if (amountCents === null) return null;
+  if (amountCents === null || !referrerTier) return null;
 
-  const cappedTier = lowerTier(referrerSub!.tier, input.tier);
+  const cappedTier = lowerTier(referrerTier, input.tier);
   const [inserted] = await db
     .insert(referralFees)
     .values({
@@ -101,7 +89,7 @@ export async function recordCollectedPayment(input: {
       paymentKey: input.paymentKey,
       amountCents,
       voidedCents: 0,
-      referrerTier: referrerSub!.tier,
+      referrerTier,
       customerTier: input.tier,
       cappedTier,
       customerEmail: input.customerEmail,

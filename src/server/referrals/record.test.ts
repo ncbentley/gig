@@ -3,6 +3,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { getDb, closeDb } from "@/server/db";
 import { runMigrations } from "@/server/db/migrate";
 import {
+  complimentaryGrants,
   plans,
   referralAdjustments,
   referralAllocations,
@@ -11,6 +12,7 @@ import {
   subscriptions,
   users,
 } from "@/server/db/schema";
+import { ensureComplimentaryReferralCodes } from "./assign";
 import { recordCollectedPayment, reverseCollectedPayment, restoreReversedPayment } from "./record";
 
 beforeAll(async () => {
@@ -26,6 +28,51 @@ afterAll(async () => {
 });
 
 describe("recordCollectedPayment", () => {
+  it("assigns a code to a complimentary referrer and pays from that granted plan", async () => {
+    delete process.env.STRIPE_SECRET_KEY;
+    const db = await getDb();
+    await db
+      .insert(plans)
+      .values({ tier: "gold", period: "monthly", amountCents: 9900, currency: "usd", active: true })
+      .onConflictDoUpdate({
+        target: [plans.tier, plans.period],
+        set: { amountCents: 9900, currency: "usd", active: true },
+      });
+
+    const [referrer] = await db
+      .insert(users)
+      .values({ email: `comp-referrer-${crypto.randomUUID()}@example.com`, passwordHash: "x" })
+      .returning();
+    await db.insert(complimentaryGrants).values({ userId: referrer.id, tier: "gold" });
+    const [customer] = await db
+      .insert(users)
+      .values({
+        email: `comp-customer-${crypto.randomUUID()}@example.com`,
+        passwordHash: "x",
+        referredByUserId: referrer.id,
+      })
+      .returning();
+
+    expect(await ensureComplimentaryReferralCodes()).toBeGreaterThanOrEqual(1);
+    const [withCode] = await db.select().from(users).where(eq(users.id, referrer.id));
+    expect(withCode.referralCode).toMatch(/^[A-Z2-9]{8}$/);
+
+    const fee = await recordCollectedPayment({
+      paymentKey: `in_comp_${crypto.randomUUID()}`,
+      userId: customer.id,
+      tier: "gold",
+      period: "monthly",
+      collectedCents: 9900,
+      customerEmail: customer.email,
+    });
+    expect(fee?.amountCents).toBe(3300);
+    expect(fee?.referrerTier).toBe("gold");
+
+    await db.delete(referralFees).where(eq(referralFees.referredUserId, customer.id));
+    await db.delete(users).where(eq(users.id, customer.id));
+    await db.delete(users).where(eq(users.id, referrer.id));
+  });
+
   it("writes an 11 dollar fee when a basic referrer is paid for a gold customer", async () => {
     delete process.env.STRIPE_SECRET_KEY;
     const db = await getDb();

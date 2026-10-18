@@ -15,6 +15,7 @@ export async function SiteHeader() {
         <nav aria-label="Main" className="flex items-center gap-1 text-sm">
           <Link href="/#ladder" className={cn(NAV_LINK, "hidden md:block")}>How it works</Link>
           <Link href="/pricing" className={NAV_LINK}>Pricing</Link>
+          <Link href="/#referrals" className={cn(NAV_LINK, "hidden sm:block")}>Referrals</Link>
           {user ? (
             <Link href="/dashboard" className={cn(buttonVariants({ size: "sm" }), "ml-2")}>Dashboard</Link>
           ) : (
@@ -43,6 +44,7 @@ export function SiteFooter() {
         </div>
         <nav aria-label="Footer" className="flex gap-5 text-sm">
           <Link href="/pricing" className="hover:text-primary">Pricing</Link>
+          <Link href="/#referrals" className="hover:text-primary">Referrals</Link>
           <Link href="/terms" className="hover:text-primary">Terms</Link>
           <Link href="/privacy" className="hover:text-primary">Privacy</Link>
         </nav>

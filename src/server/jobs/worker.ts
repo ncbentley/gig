@@ -2,6 +2,7 @@ import { startTwelveDataStream } from "@/server/market-data/twelvedata-stream";
 import { connectTelegram } from "@/server/telegram";
 import { LANE_POLL_MS, TELEGRAM_SCHEDULE_MS } from "./limits";
 import { JOB_TYPES, setJobEnqueuedListener, type JobType } from "./queue";
+import { ensureComplimentaryReferralCodes } from "@/server/referrals/assign";
 import { processJobs, requeueStaleJobs, scheduleRecurring } from "./runner";
 
 const g = globalThis as unknown as { __gsiWorker?: boolean; __gsiLanes?: boolean };
@@ -56,6 +57,8 @@ export function startWorker() {
   const board = safe("board", () => scheduleRecurring("board"));
 
   safe("startup", async () => {
+    const assigned = await ensureComplimentaryReferralCodes();
+    if (assigned > 0) console.log(`[worker] assigned referral codes to ${assigned} complimentary member${assigned === 1 ? "" : "s"}`);
     await requeueStaleJobs();
     startLanes();
     await scheduleRecurring("minute");

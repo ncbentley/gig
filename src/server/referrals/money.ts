@@ -1,7 +1,7 @@
 import type { Tier } from "@/server/db/schema";
 
 const RANK: Record<Tier, number> = { basic: 0, silver: 1, gold: 2 };
-const FEE_CENTS: Record<Tier, number> = { basic: 1100, silver: 2200, gold: 3300 };
+export const REFERRAL_FEE_CENTS: Record<Tier, number> = { basic: 1100, silver: 2200, gold: 3300 };
 
 export function lowerTier(a: Tier, b: Tier): Tier {
   return RANK[a] <= RANK[b] ? a : b;
@@ -16,7 +16,7 @@ export function feeForPayment(input: {
 }): number | null {
   if (!input.referrerEligible) return null;
   if (input.collectedCents !== input.customerCatalogCents) return null;
-  return FEE_CENTS[lowerTier(input.referrerTier, input.customerTier)];
+  return REFERRAL_FEE_CENTS[lowerTier(input.referrerTier, input.customerTier)];
 }
 
 export function reverseFee(input: { amountCents: number; voidedCents: number; allocatedCents: number }) {

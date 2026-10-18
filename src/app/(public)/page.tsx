@@ -16,6 +16,7 @@ import { historyWindowLabel, TIER_LABEL } from "@/server/entitlements/config";
 import { getTierConfig } from "@/server/entitlements/service";
 import { readDashboardSnapshot } from "@/server/feed/snapshot";
 import { listPublicSampleSignals, listSources } from "@/server/signals/queries";
+import { REFERRAL_FEE_CENTS } from "@/server/referrals/money";
 import { getTopSources } from "@/server/statistics/service";
 import type { Tier } from "@/server/db/schema";
 
@@ -389,7 +390,86 @@ export default async function LandingPage() {
         </div>
       </section>
 
-      <section className="border-y border-primary/15">
+      <section id="referrals" className="border-y border-primary/15">
+        <div className="mx-auto max-w-6xl px-4 py-20">
+          <p className="text-sm font-semibold tracking-[0.16em] text-primary uppercase">The GIG referral program</p>
+          <h2 className="mt-3 max-w-[16ch] font-heading text-3xl font-extrabold tracking-[-0.03em] md:text-4xl">Share the intelligence. Earn every month.</h2>
+          <p className="mt-4 max-w-xl text-pretty leading-relaxed text-muted-foreground">
+            Know other gold traders? Introduce them to Gold Intelligence Gateway and earn a commission each month they pay.
+          </p>
+          <div className="mt-10 grid gap-4 md:grid-cols-3">
+            {PAID.map((tier) => (
+              <article key={tier} className="rounded-2xl border border-primary/20 bg-[#081328]/60 px-5 py-6">
+                <p className={cn("font-heading text-4xl font-extrabold tabular-nums tracking-tight", TIER_TYPE[tier])}>
+                  {fmtMoney(REFERRAL_FEE_CENTS[tier], "usd")}
+                </p>
+                <h3 className={cn("mt-2 font-heading text-xl font-extrabold tracking-tight", TIER_TYPE[tier])}>{TIER_LABEL[tier]}</h3>
+                <p className="mt-1 text-sm text-muted-foreground">Per referral / month</p>
+              </article>
+            ))}
+          </div>
+          <h3 className="mt-12 max-w-[22ch] font-heading text-2xl font-extrabold tracking-tight">Three members on your plan cover that membership.</h3>
+          <p className="mt-3 max-w-xl text-pretty leading-relaxed text-foreground/85">
+            Refer three active, paying members on the same plan and the commissions equal that plan&apos;s price. The membership is paid for by what you earn.
+          </p>
+          <Link href={user ? "/referrals" : "/signup?next=%2Freferrals"} className={cn(buttonVariants({ size: "lg" }), "mt-6 w-fit px-6")}>
+            Become a GIG Referral Partner <ArrowRight />
+          </Link>
+          <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">
+            Commissions follow the lower of the two plans, and only when a full monthly price is collected. The 10-day pass does not earn a commission.
+          </p>
+
+          <ol className="mt-14 grid gap-8 md:grid-cols-3">
+            <li>
+              <p className="text-sm font-semibold text-primary">1</p>
+              <h3 className="mt-2 font-heading text-lg font-extrabold tracking-tight">Get your referral link</h3>
+              <p className="mt-2 text-sm leading-relaxed text-foreground/80">Every member gets a link to share with trading friends, Telegram communities, and other gold traders.</p>
+            </li>
+            <li>
+              <p className="text-sm font-semibold text-primary">2</p>
+              <h3 className="mt-2 font-heading text-lg font-extrabold tracking-tight">Earn one-third of a paid month</h3>
+              <p className="mt-2 text-sm leading-relaxed text-foreground/80">
+                {fmtMoney(REFERRAL_FEE_CENTS.basic, "usd")} for Basic, {fmtMoney(REFERRAL_FEE_CENTS.silver, "usd")} for Silver, or {fmtMoney(REFERRAL_FEE_CENTS.gold, "usd")} for Gold. The commission follows the lower plan.
+              </p>
+            </li>
+            <li>
+              <p className="text-sm font-semibold text-primary">3</p>
+              <h3 className="mt-2 font-heading text-lg font-extrabold tracking-tight">Three members cover your plan</h3>
+              <p className="mt-2 text-sm leading-relaxed text-foreground/80">Three paying members on the same plan earn that plan&apos;s price each month. Those commissions cover the membership.</p>
+            </li>
+          </ol>
+
+          <div className="mt-14 max-w-xl">
+            <h3 className="font-heading text-lg font-extrabold tracking-tight">What the commissions add up to</h3>
+            <table className="mt-4 w-full text-sm">
+              <thead>
+                <tr className="border-b border-primary/20 text-left text-muted-foreground">
+                  <th className="py-2 font-medium">Referrals on the same plan</th>
+                  <th className="py-2 text-right font-medium">Monthly commissions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  ["1 Basic member", REFERRAL_FEE_CENTS.basic],
+                  ["3 Basic members", REFERRAL_FEE_CENTS.basic * 3],
+                  ["3 Silver members", REFERRAL_FEE_CENTS.silver * 3],
+                  ["3 Gold members", REFERRAL_FEE_CENTS.gold * 3],
+                ].map(([label, cents]) => (
+                  <tr key={label} className="border-b border-primary/15">
+                    <td className="py-2.5">{label}</td>
+                    <td className="py-2.5 text-right font-semibold tabular-nums">{fmtMoney(Number(cents), "usd")}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
+              Three referrals at the same plan level earn the cost of that plan. Share GIG and let those commissions cover your membership.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section className="border-b border-primary/15">
         <div className="mx-auto max-w-6xl px-4 py-20">
           <h2 className="max-w-[18ch] font-heading text-3xl font-extrabold tracking-[-0.03em] md:text-4xl">Intelligence you can examine. Not promises you have to believe.</h2>
           <p className="mt-4 max-w-xl text-pretty leading-relaxed text-muted-foreground">

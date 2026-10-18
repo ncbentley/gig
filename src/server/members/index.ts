@@ -7,6 +7,7 @@ import { canGrant } from "@/server/entitlements/complimentary";
 import { TIER_LABEL } from "@/server/entitlements/config";
 import { getTierConfig } from "@/server/entitlements/service";
 import { accessForMember, trialEndsAt } from "@/server/entitlements/trial";
+import { ensureReferralCode } from "@/server/referrals/assign";
 
 const ENTITLED = ["active", "trialing", "past_due"] as const;
 
@@ -103,6 +104,7 @@ export async function grantComplimentary(actor: Actor, userId: string, tier: Tie
     .insert(complimentaryGrants)
     .values({ userId, tier, grantedByUserId: actor.userId })
     .onConflictDoUpdate({ target: complimentaryGrants.userId, set: { tier, grantedByUserId: actor.userId, updatedAt: new Date() } });
+  await ensureReferralCode(userId);
   await recordAudit({
     actor,
     entityType: "user",
