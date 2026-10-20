@@ -18,6 +18,10 @@ export function rateLimit(key: string, limit: number, windowMs: number) {
   return { ok: b.count <= limit, remaining: Math.max(0, limit - b.count), resetAt: b.resetAt };
 }
 
+export function resetRateLimits() {
+  buckets.clear();
+}
+
 export function clientIp(headers: Headers) {
   return headers.get("x-forwarded-for")?.split(",")[0]?.trim() || headers.get("x-real-ip") || "local";
 }

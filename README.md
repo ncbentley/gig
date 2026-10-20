@@ -119,6 +119,7 @@ All `/api/v1` read endpoints use the session cookie and return the same entitlem
 
 | Method | Path | Notes |
 | --- | --- | --- |
+| GET | `/api/v1/research/feed` | Read-only research delta. `Authorization: Bearer` from `RESEARCH_FEED_TOKEN`. No session. Paging: `limit` (1–100), `cursor`. See below. |
 | GET | `/api/v1/signals` | Filters: `source`, `status` (`OPEN`, `CLOSED` or a status), `direction`, `from`, `to`; Platinum adds `entryType`, `signalType` and `q`. Paging: `limit`, `offset` |
 | GET | `/api/v1/signals/:id` | Signal, targets, updates, outcome, and consensus gated by tier |
 | GET | `/api/v1/signals/:id/similar` | Similar-trade summary and details |
@@ -138,6 +139,14 @@ curl -X POST http://localhost:4317/api/v1/ingest/<source-slug> \
 ```
 
 Sending the same `message_id` again returns `duplicate`. The `json-webhook` parser accepts structured payloads such as `{"action":"open","side":"buy","entry":[3400,3402],"sl":3392,"tp":[3412,3425],"ref":"1"}`.
+
+### Research feed
+
+`GET /api/v1/research/feed` is the unattended read-only feed. It is off until `RESEARCH_FEED_TOKEN` is set. Generate that value with `pnpm research:token`, store it in Infisical, and share it once out of band. Replacing the env value revokes the old bearer. There is no dev default.
+
+The body is schema `research-feed-v1`. Events are ordered by `seq`. Pass `cursor` back as `page.nextCursor`. The same cursor returns the same page. A wrong bearer is `401 invalid_token`. The budget is `RESEARCH_FEED_RATE_LIMIT` requests per minute per process (default 60). Over the budget the response is `429` with `Retry-After`.
+
+Basic events are trader calls and include the channel name, original text, and lineage id of that call. Silver events are grouped ideas and carry `lineage.signalIds`. Gold events are gold-book compositions and carry `lineage.ideaIds` plus the underlying call ids. Deletes are `op: "delete"` tombstones. QA channels are left out. The route does not read a member session and does not change the Cloudflare tunnel. The consumer brief is [`docs/research-feed.md`](docs/research-feed.md).
 
 ## Configuration
 

@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   boolean,
   doublePrecision,
   index,
@@ -783,6 +784,16 @@ export const attributionTouches = pgTable(
   },
   (t) => [index("attribution_touches_visitor_idx").on(t.visitorId), index("attribution_touches_touched_idx").on(t.touchedAt)],
 );
+
+/** Append-only delta for the read-only research feed. Payloads are frozen row snapshots. */
+export const researchFeedLog = pgTable("research_feed_log", {
+  seq: bigint("seq", { mode: "number" }).primaryKey(),
+  entity: text("entity", { enum: ["signal", "idea", "gold"] }).notNull(),
+  entityId: text("entity_id").notNull(),
+  op: text("op", { enum: ["upsert", "delete"] }).notNull(),
+  snapshot: jsonb("snapshot").$type<Record<string, unknown> | null>(),
+  occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 export type User = typeof users.$inferSelect;
 export type Source = typeof sources.$inferSelect;
