@@ -1,17 +1,13 @@
-import { Activity, ChartCandlestick, Coins, History, Hourglass, LayoutDashboard, Radar, Radio, Trophy } from "lucide-react";
+import { ChartCandlestick, Coins, LayoutDashboard, Radio, Trophy } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AffiliateStrip } from "@/components/affiliate-strip";
 import { BookSwitcher, bookHref } from "@/components/book-switcher";
-import { BookSections } from "@/components/book-sections";
 import { DirectionPanel } from "@/components/direction-panel";
-import { IdeaList } from "@/components/idea-list";
-import { FeedRefresh } from "@/components/feed-refresh";
+import { DashboardLive } from "@/components/dashboard-live";
 import { LockedPanel } from "@/components/locked";
 import { PageHeader, SectionTitle } from "@/components/page-header";
-import { Stat } from "@/components/signal-bits";
-import { SignalList } from "@/components/signal-list";
 import { TopSources } from "@/components/top-sources";
 import { fmtAge, fmtPrice } from "@/lib/format";
 import { can, lowestTierWith } from "@/server/entitlements/access";
@@ -19,7 +15,7 @@ import { historyWindowLabel, TIER_LABEL } from "@/server/entitlements/config";
 import { accessForDashboardView, applyHistoryWindow, dashboardsFor, readDashboardSnapshot, resolveDashboardView, type DashboardView } from "@/server/feed/snapshot";
 import { countHistoryIdeasForAccess } from "@/server/ideas/service";
 import { getViewer } from "@/server/entitlements/service";
-import { countClosedSignalsForAccess, countOpenSignalsForViewer } from "@/server/signals/queries";
+import { countClosedSignalsForAccess } from "@/server/signals/queries";
 import { nowMs } from "@/lib/clock";
 
 export const metadata: Metadata = { title: "Dashboard" };
@@ -52,7 +48,6 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const view = resolveDashboardView(access, requested);
   if (requested && requested !== view) redirect(bookHref(view, books[0], "/dashboard"));
   const bookAccess = accessForDashboardView(view, config);
-  const bookViewer = { ...viewer, access: bookAccess };
   const now = nowMs();
   const stored = await readDashboardSnapshot(view);
   const snap = stored ? applyHistoryWindow(stored, bookAccess, new Date(now)) : null;
@@ -109,23 +104,19 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const direction = snap?.direction ?? null;
   const ranking = snap?.ranking ?? { rows: [], eligibleCount: 0, sourceCount: 0 };
   const ideas = goldBook ? snap?.gold : silver ? snap?.ideas : null;
-  const signals = snap?.signals;
-  const pending = (signals?.open ?? []).filter((item) => item.status === "PENDING");
-  const activeSignals = (signals?.open ?? []).filter((item) => item.status !== "PENDING");
-  const openCounts = !ideas && bookAccess.historyDays !== null ? await countOpenSignalsForViewer(bookViewer) : null;
-  const availableCount = ideas ? ideas.available.length : (openCounts?.pending ?? pending.length);
-  const activeCount = ideas ? ideas.active.length : (openCounts?.active ?? signals?.active ?? activeSignals.length);
   const historyCount = goldBook
     ? (ideas?.historyCount ?? 0)
     : silver
       ? await countHistoryIdeasForAccess(bookAccess)
       : bookAccess.historyDays !== null
         ? await countClosedSignalsForAccess(bookAccess)
-        : (signals?.historyCount ?? 0);
+        : (snap?.signals?.historyCount ?? 0);
+  const historyEmpty = ideas
+    ? `No trades in the ${TIER_LABEL[view === "gold" ? "gold" : "silver"]} history window yet.`
+    : "No closed signals in this history window yet.";
 
   return (
     <>
-      <FeedRefresh />
       {header}
       <BookSwitcher books={books} current={view} />
       {!snap ? (
@@ -137,35 +128,16 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
         now={now}
         empty={access.isAdmin ? "Star a channel on the Telegram page. Its posts feed this read." : "No direction read yet."}
       />
-      <div className="mt-8 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Available" value={availableCount} hint="can still be filled" icon={Hourglass} />
-        <Stat label="Active" value={activeCount} hint="entered, not closed" icon={Activity} tone="gold" />
-        <Stat
-          label="History"
-          value={historyCount}
-          hint={historyWindowLabel(bookAccess.historyDays)}
-          icon={History}
-        />
-        <Stat label="Tracked sources" value={ranking.sourceCount} icon={Radar} />
-      </div>
-
-      {ideas ? (
-        <BookSections
-          historyCount={ideas.historyCount}
-          historyHref={historyHref}
-          available={<IdeaList items={ideas.available} now={now} empty="Nothing is waiting to fill." />}
-          active={<IdeaList items={ideas.active} now={now} empty="Nothing is active right now." />}
-          history={<IdeaList items={ideas.history} now={now} empty={`No trades in the ${TIER_LABEL[view === "gold" ? "gold" : "silver"]} history window yet.`} />}
-        />
-      ) : (
-        <BookSections
-          historyCount={signals?.historyCount ?? 0}
-          historyHref={historyHref}
-          available={<SignalList items={pending} now={now} empty="No entries are waiting to fill." />}
-          active={<SignalList items={activeSignals} now={now} empty="No trades are active right now." />}
-          history={<SignalList items={signals?.closed ?? []} now={now} empty="No closed signals in this history window yet." />}
-        />
-      )}
+      <DashboardLive
+        key={view}
+        view={view}
+        snap={snap}
+        historyCount={historyCount}
+        historyHint={historyWindowLabel(bookAccess.historyDays)}
+        historyEmpty={historyEmpty}
+        historyHref={historyHref}
+        sourceCount={ranking.sourceCount}
+      />
 
       <section className="mt-8">
         <SectionTitle icon={Trophy} title="Top sources" action={<ViewAll href="/sources" />} />

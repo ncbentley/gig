@@ -84,10 +84,11 @@ export const LANE_POLL_MS: Record<JobType, number> = {
 };
 
 /**
- * Catch-up is a rotation, not a sweep of every channel.
+ * Catch-up is a rotation, not the path a live post takes.
  *
- * Live updates already store posts as they arrive. This timer only backfills
- * channels that have gone quiet, so a dropped socket cannot leave a gap.
+ * A new post arrives as a push: the message itself, or UpdateChannelTooLong
+ * when Telegram will not send the body. That push fetches only the named
+ * channel. This timer backfills a channel the push never mentioned.
  *
  * History fetches share TELEGRAM_CONCURRENCY (2). A quiet channel is one
  * messages.getHistory. At about one second per call that is ~120 channels a

@@ -34,7 +34,9 @@ export function fmtMinutes(n: number | null | undefined) {
 
 export function fmtAge(iso: string | Date, now = Date.now()) {
   const t = typeof iso === "string" ? Date.parse(iso) : iso.getTime();
-  return fmtMinutes(Math.max(0, (now - t) / 60_000));
+  const ms = Math.max(0, now - t);
+  if (ms < 60_000) return `${Math.round(ms / 1000)}s`;
+  return fmtMinutes(ms / 60_000);
 }
 
 export function fmtDateTime(iso: string | Date | null | undefined) {

@@ -1,4 +1,5 @@
 import { eq, sql } from "drizzle-orm";
+import { publishFeedRevision } from "@/server/feed/hub";
 import { getDb } from "@/server/db";
 import { boardPosts, consolidatedIdeas, dashboardSnapshots, feedRevisions, goldBookEntries, marketDirectionSnapshots, signalTargets, signals, sourceStats } from "@/server/db/schema";
 import { latestMarketDirection } from "@/server/direction/service";
@@ -24,6 +25,15 @@ export interface BookSectionsCache<T> {
 
 export const DASHBOARD_VIEWS = ["admin", "gold", "silver", "basic", "free"] as const;
 export type DashboardView = (typeof DASHBOARD_VIEWS)[number];
+
+/**
+ * Signal books are written and published first. Gold replays every stored call
+ * against the bar history, and a new basic-book signal must not wait on that.
+ */
+export const SNAPSHOT_WAVES: readonly (readonly DashboardView[])[] = [
+  ["admin", "basic", "free"],
+  ["silver", "gold"],
+];
 
 export function dashboardViewFor(access: { isAdmin: boolean; tier: string | null }): DashboardView {
   if (access.isAdmin) return "admin";
@@ -256,6 +266,18 @@ async function buildSnapshot(view: DashboardView, config: Awaited<ReturnType<typ
   return cache;
 }
 
+async function writeSnapshot(view: DashboardView, config: Awaited<ReturnType<typeof getTierConfig>>) {
+  const db = await getDb();
+  const payload = await buildSnapshot(view, config);
+  await db
+    .insert(dashboardSnapshots)
+    .values({ view, payload: payload as unknown as Record<string, unknown>, updatedAt: new Date() })
+    .onConflictDoUpdate({
+      target: dashboardSnapshots.view,
+      set: { payload: payload as unknown as Record<string, unknown>, updatedAt: new Date() },
+    });
+}
+
 /** Rebuilds one dashboard snapshot per membership when the stored inputs changed. Returns whether a page should refresh. */
 export async function syncDashboardCache() {
   const db = await getDb();
@@ -264,17 +286,16 @@ export async function syncDashboardCache() {
   const [existing] = await db.select({ n: sql<number>`count(*)::int` }).from(dashboardSnapshots);
   if (mark?.fingerprint === next && (existing?.n ?? 0) >= DASHBOARD_VIEWS.length) return false;
   const config = await getTierConfig();
-  for (const view of DASHBOARD_VIEWS) {
-    const payload = await buildSnapshot(view, config);
+  for (let i = 0; i < SNAPSHOT_WAVES.length; i += 1) {
+    for (const view of SNAPSHOT_WAVES[i]) await writeSnapshot(view, config);
+    const last = i === SNAPSHOT_WAVES.length - 1;
+    const updatedAt = new Date();
     await db
-      .insert(dashboardSnapshots)
-      .values({ view, payload: payload as unknown as Record<string, unknown>, updatedAt: new Date() })
-      .onConflictDoUpdate({
-        target: dashboardSnapshots.view,
-        set: { payload: payload as unknown as Record<string, unknown>, updatedAt: new Date() },
-      });
+      .update(feedRevisions)
+      .set(last ? { fingerprint: next, updatedAt } : { updatedAt })
+      .where(eq(feedRevisions.id, "dashboard"));
+    await publishFeedRevision(updatedAt.toISOString());
   }
-  await db.update(feedRevisions).set({ fingerprint: next, updatedAt: new Date() }).where(eq(feedRevisions.id, "dashboard"));
   return true;
 }
 

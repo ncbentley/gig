@@ -1,34 +1,35 @@
 import { getCurrentUser } from "@/server/auth";
-import { feedRevision } from "@/server/board/service";
+import { subscribeFeedRevision } from "@/server/feed/hub";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
-/** Tells an open dashboard when stored labels changed. The page itself stays a normal server render. */
+/** Pushes a dashboard revision to open browsers. The database notifies this process; nothing is polled. */
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) return new Response("unauthorized", { status: 401 });
 
   const encoder = new TextEncoder();
-  let timer: ReturnType<typeof setInterval> | undefined;
+  let unsubscribe = () => {};
+  let beat: ReturnType<typeof setInterval> | undefined;
   const stream = new ReadableStream({
-    async start(controller) {
-      let last = "";
-      const tick = async () => {
-        const revision = await feedRevision();
-        if (revision === last) {
-          controller.enqueue(encoder.encode(": ping\n\n"));
-          return;
-        }
-        last = revision;
+    start(controller) {
+      const send = (revision: string) => {
         controller.enqueue(encoder.encode(`data: ${revision}\n\n`));
       };
-      await tick();
-      timer = setInterval(() => {
-        tick().catch(() => controller.close());
-      }, 5_000);
+      unsubscribe = subscribeFeedRevision(send);
+      send("ready");
+      beat = setInterval(() => {
+        try {
+          controller.enqueue(encoder.encode(": ping\n\n"));
+        } catch {
+          if (beat) clearInterval(beat);
+        }
+      }, 20_000);
     },
     cancel() {
-      if (timer) clearInterval(timer);
+      unsubscribe();
+      if (beat) clearInterval(beat);
     },
   });
   return new Response(stream, {

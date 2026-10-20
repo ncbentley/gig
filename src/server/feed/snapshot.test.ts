@@ -5,7 +5,7 @@ import { runMigrations } from "@/server/db/migrate";
 import { dashboardSnapshots, feedRevisions } from "@/server/db/schema";
 import { buildAccess } from "@/server/entitlements/access";
 import { DEFAULT_TIER_CONFIG } from "@/server/entitlements/config";
-import { applyHistoryWindow, syncDashboardCache, type DashboardCache } from "./snapshot";
+import { DASHBOARD_VIEWS, SNAPSHOT_WAVES, applyHistoryWindow, syncDashboardCache, type DashboardCache } from "./snapshot";
 
 describe("syncDashboardCache", () => {
   beforeAll(async () => {
@@ -23,6 +23,14 @@ describe("syncDashboardCache", () => {
     const [mark] = await db.select().from(feedRevisions).where(eq(feedRevisions.id, "dashboard"));
     expect(mark.fingerprint).toBeTruthy();
     expect(await syncDashboardCache()).toBe(false);
+  });
+});
+
+describe("snapshot waves", () => {
+  it("publishes the signal books before the gold replay", () => {
+    expect(SNAPSHOT_WAVES[0]).toEqual(["admin", "basic", "free"]);
+    expect(SNAPSHOT_WAVES[1]).toContain("gold");
+    expect(SNAPSHOT_WAVES.flat().sort()).toEqual([...DASHBOARD_VIEWS].sort());
   });
 });
 

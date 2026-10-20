@@ -1,8 +1,9 @@
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { Api, helpers, Logger, password as tgPassword, sessions, TelegramClient } from "telegram";
 // Explicit .js file paths: Node can't resolve GramJS directory imports, and a bundled second copy breaks its instanceof checks.
 import { EditedMessage, type EditedMessageEvent } from "telegram/events/EditedMessage.js";
 import { NewMessage, type NewMessageEvent } from "telegram/events/NewMessage.js";
+import { Raw } from "telegram/events/Raw.js";
 import { LogLevel } from "telegram/extensions/Logger.js";
 
 const { StringSession } = sessions;
@@ -20,6 +21,7 @@ import { deleteSetting, getSetting, setSetting, SETTING_KEYS } from "@/server/se
 import { listJoinedChats, accessHashOf, chatWithLoadedAccessHash, type JoinedChat } from "./dialogs";
 import { readHistoryPages } from "./history";
 import { finishImportIfIdle, markTelegramImportFailed, markTelegramImporting, markTelegramImportQueued } from "./import-status";
+import { liveDialogTips, tipsNewerThan } from "./live-sweep";
 import { parseChannelInput, toIncomingEvent } from "./mapping";
 
 export { selectJoinedChat } from "./dialogs";
@@ -363,6 +365,7 @@ export async function connectTelegram(): Promise<TelegramClient | null> {
   }
   const st = state();
   if (st.client?.connected && st.revokedSession !== st.boundSession) return st.client;
+  const started = !st.connecting;
   if (!st.connecting) {
     st.connecting = (async () => {
       try {
@@ -426,6 +429,9 @@ export async function connectTelegram(): Promise<TelegramClient | null> {
     })();
   }
   await st.connecting;
+  // Messages posted while the socket was down are not pushed again. One read of
+  // the newest dialogs fills that gap. It does not run on a timer.
+  if (started && st.client?.connected) void sweepRecentTelegramPosts().catch((err) => console.error("[telegram] reconnect sweep failed:", (err as Error).message));
   return st.client?.connected ? st.client : null;
 }
 
@@ -922,6 +928,10 @@ async function queueIncoming(source: Source, event: IncomingEvent | null, messag
   }
   if (!event) return null;
   const stored = await storeRawEvent(source.id, event);
+  if (stored.status === "stored" && opts?.live && event.publishedAt) {
+    const lagMs = Date.now() - event.publishedAt.getTime();
+    if (lagMs > 15_000) console.warn(`[telegram] post ${messageId} on ${source.id} was ${Math.round(lagMs / 1000)}s old when stored`);
+  }
   if (stored.status === "stored" && source.parseSignals) {
     await enqueueJob(
       "PROCESS_EVENT",
@@ -1026,12 +1036,130 @@ function installHandlers(client: TelegramClient) {
   installed.add(client);
   client.addEventHandler((e: NewMessageEvent) => void onLiveMessage(e.message, false), new NewMessage({}));
   client.addEventHandler((e: EditedMessageEvent) => void onLiveMessage(e.message, true), new EditedMessage({}));
+  // GramJS never calls getChannelDifference. Once the account is in hundreds of
+  // channels, Telegram pushes UpdateChannelTooLong instead of the message.
+  client.addEventHandler((update) => {
+    if (update instanceof Api.UpdateChannelTooLong) void onChannelTooLong(update.channelId.toString());
+  }, new Raw({ types: [Api.UpdateChannelTooLong] }));
 }
 
 function messagePeerId(msg: Api.Message) {
   if (msg.peerId instanceof Api.PeerChannel) return msg.peerId.channelId.toString();
   if (msg.peerId instanceof Api.PeerChat) return msg.peerId.chatId.toString();
   return null;
+}
+
+const SWEEP_DIALOGS = 20;
+const SWEEP_CHANNELS = SWEEP_DIALOGS;
+const SWEEP_MESSAGES = 20;
+let sweeping = false;
+let sweepAfter = 0;
+
+/** One getMessages for posts newer than the cursor. Does not wait behind a history import. */
+async function fetchNewerMessages(client: TelegramClient, source: Source, minId: number, limit: number) {
+  const batch = await withTimeout(client.getMessages(inputPeer(source), { limit, minId }));
+  return batch.filter((message): message is Api.Message => message instanceof Api.Message).sort((a, b) => a.id - b.id);
+}
+
+async function storeLiveMessages(source: Source, messages: Api.Message[]) {
+  let ingested = 0;
+  for (const message of messages) {
+    if (message.id <= (source.lastMessageId ?? 0)) continue;
+    const stored = await queueTelegramMessage(source, message, false, { live: true });
+    if (stored?.status === "stored") ingested += 1;
+  }
+  if (ingested > 0) {
+    const { processJobs } = await import("@/server/jobs/runner");
+    void processJobs(50, ["PROCESS_EVENT"]).catch(() => {});
+  }
+  return ingested;
+}
+
+const channelCatchUp = new Set<string>();
+
+/** Telegram named this channel in a push. Fetch only its new posts, immediately. */
+async function onChannelTooLong(channelId: string) {
+  if (channelCatchUp.has(channelId)) return;
+  channelCatchUp.add(channelId);
+  try {
+    const db = await getDb();
+    const [source] = await db
+      .select()
+      .from(sources)
+      .where(and(eq(sources.telegramChannelId, channelId), eq(sources.sourceType, "telegram"), eq(sources.active, true), isNull(sources.removedAt)));
+    if (!source || source.lastMessageId == null || (!source.parseSignals && !source.starred)) return;
+    const client = await connectTelegram();
+    if (!client) return;
+    const ingested = await storeLiveMessages(source, await fetchNewerMessages(client, source, source.lastMessageId, SWEEP_MESSAGES));
+    if (ingested > 0) console.log(`[telegram] channel push stored ${ingested} post${ingested === 1 ? "" : "s"} from ${channelId}`);
+  } catch (err) {
+    console.error(`[telegram] channel push failed for ${channelId}:`, (err as Error).message);
+  } finally {
+    channelCatchUp.delete(channelId);
+  }
+}
+
+/**
+ * Fills posts that arrived while the socket was down. Runs once per connection,
+ * not on a timer. A live post while the socket is up comes from the push handler.
+ */
+export async function sweepRecentTelegramPosts() {
+  if (process.env.JOBS_WORKER === "off") return { ingested: 0, skipped: "remote" as const };
+  if (sweeping || Date.now() < sweepAfter) return { ingested: 0, skipped: "busy" as const };
+  sweeping = true;
+  try {
+    const client = await connectTelegram();
+    if (!client) {
+      sweepAfter = Date.now() + 30_000;
+      return { ingested: 0, skipped: "not_connected" as const };
+    }
+    const dialogs = await withTimeout(client.getDialogs({ limit: SWEEP_DIALOGS }));
+    const tips = liveDialogTips(
+      dialogs.map((dialog) => ({
+        isUser: dialog.isUser,
+        entityId: dialog.entity?.id ?? null,
+        messageId: dialog.message?.id ?? null,
+      })),
+    );
+    if (!tips.length) return { ingested: 0 };
+    const db = await getDb();
+    const rows = await db
+      .select()
+      .from(sources)
+      .where(
+        and(
+          eq(sources.sourceType, "telegram"),
+          eq(sources.active, true),
+          isNull(sources.removedAt),
+          inArray(
+            sources.telegramChannelId,
+            tips.map((tip) => tip.channelId),
+          ),
+        ),
+      );
+    const lastByChannel = new Map<string, number>();
+    const sourceByChannel = new Map<string, Source>();
+    for (const row of rows) {
+      if (!row.telegramChannelId || row.lastMessageId == null) continue;
+      if (!row.parseSignals && !row.starred) continue;
+      lastByChannel.set(row.telegramChannelId, row.lastMessageId);
+      sourceByChannel.set(row.telegramChannelId, row);
+    }
+    let ingested = 0;
+    for (const tip of tipsNewerThan(tips, lastByChannel).slice(0, SWEEP_CHANNELS)) {
+      const source = sourceByChannel.get(tip.channelId);
+      if (!source || source.lastMessageId == null) continue;
+      ingested += await storeLiveMessages(source, await fetchNewerMessages(client, source, source.lastMessageId, SWEEP_MESSAGES));
+    }
+    if (ingested > 0) console.log(`[telegram] reconnect sweep stored ${ingested} post${ingested === 1 ? "" : "s"}`);
+    return { ingested };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "";
+    if (message.includes("FLOOD_WAIT")) sweepAfter = Date.now() + 30_000;
+    throw err;
+  } finally {
+    sweeping = false;
+  }
 }
 
 async function onLiveMessage(msg: Api.Message, edited: boolean) {
