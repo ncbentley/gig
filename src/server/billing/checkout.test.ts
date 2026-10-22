@@ -1,5 +1,28 @@
 import { describe, expect, it } from "vitest";
+import { billingMode } from "./config";
 import { completeMockCheckout, startCheckout, stopsAtPeriodEnd } from "./service";
+
+describe("billingMode", () => {
+  it("refuses to fall back to mock billing in production unless ALLOW_MOCK_BILLING=1", () => {
+    const prevNodeEnv = process.env.NODE_ENV;
+    const prevStripe = process.env.STRIPE_SECRET_KEY;
+    const prevAllow = process.env.ALLOW_MOCK_BILLING;
+    try {
+      delete process.env.STRIPE_SECRET_KEY;
+      delete process.env.ALLOW_MOCK_BILLING;
+      (process.env as { NODE_ENV?: string }).NODE_ENV = "production";
+      expect(billingMode()).toBe("stripe");
+      process.env.ALLOW_MOCK_BILLING = "1";
+      expect(billingMode()).toBe("mock");
+    } finally {
+      (process.env as { NODE_ENV?: string }).NODE_ENV = prevNodeEnv;
+      if (prevStripe === undefined) delete process.env.STRIPE_SECRET_KEY;
+      else process.env.STRIPE_SECRET_KEY = prevStripe;
+      if (prevAllow === undefined) delete process.env.ALLOW_MOCK_BILLING;
+      else process.env.ALLOW_MOCK_BILLING = prevAllow;
+    }
+  });
+});
 
 describe("startCheckout", () => {
   it("refuses a weekly or annual plan before any billing call", async () => {

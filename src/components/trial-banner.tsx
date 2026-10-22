@@ -1,7 +1,8 @@
 import Link from "next/link";
+import { nowMs } from "@/lib/clock";
 
 export function TrialBanner({ endsAt }: { endsAt: Date }) {
-  const daysLeft = Math.max(0, Math.ceil((endsAt.getTime() - Date.now()) / 86_400_000));
+  const daysLeft = Math.max(0, Math.ceil((endsAt.getTime() - nowMs()) / 86_400_000));
   return (
     <div className="mb-6 rounded-xl border border-primary/40 bg-primary/10 px-4 py-3 text-sm">
       <p className="font-semibold">Your previous free trial is still active.</p>

@@ -66,22 +66,35 @@ async function loadRequestableBalanceCents(userId: string) {
 }
 
 export async function savePayoutAccount(input: SavePayoutAccountInput) {
+  const holder = input.accountHolderName.trim();
+  const routing = input.routingNumber.trim();
+  const account = input.accountNumber.trim();
+  if (!holder || holder.length < 2 || holder.length > 120 || /[\u0000-\u001F\u007F]/.test(holder)) {
+    throw new Error("Enter a valid account holder name.");
+  }
+  if (!/^\d{9}$/.test(routing)) {
+    throw new Error("Routing number must be 9 digits.");
+  }
+  if (!/^\d{4,17}$/.test(account)) {
+    throw new Error("Account number must be 4 to 17 digits.");
+  }
+
   const db = await getDb();
-  const routingEncrypted = encryptSecret(input.routingNumber);
-  const accountEncrypted = encryptSecret(input.accountNumber);
+  const routingEncrypted = encryptSecret(routing);
+  const accountEncrypted = encryptSecret(account);
 
   await db
     .insert(referralPayoutAccounts)
     .values({
       userId: input.userId,
-      accountHolderName: input.accountHolderName,
+      accountHolderName: holder,
       routingEncrypted,
       accountEncrypted,
     })
     .onConflictDoUpdate({
       target: referralPayoutAccounts.userId,
       set: {
-        accountHolderName: input.accountHolderName,
+        accountHolderName: holder,
         routingEncrypted,
         accountEncrypted,
         updatedAt: new Date(),

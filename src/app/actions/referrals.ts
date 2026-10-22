@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/server/auth";
 import { requireAdmin } from "@/server/auth/guards";
+import { rateLimit } from "@/server/auth/rate-limit";
 import {
   markWithdrawalSent,
   rejectWithdrawal,
@@ -16,6 +17,9 @@ export type ReferralFormState = { error?: string } | undefined;
 export async function savePayoutAccountAction(_: ReferralFormState, form: FormData): Promise<ReferralFormState> {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+  if (!rateLimit(`payout-save:${user.id}`, 10, 15 * 60_000).ok) {
+    return { error: "Too many attempts. Try again in a few minutes." };
+  }
   const accountHolderName = String(form.get("accountHolderName") ?? "").trim();
   const routingNumber = String(form.get("routingNumber") ?? "").trim();
   const accountNumber = String(form.get("accountNumber") ?? "").trim();

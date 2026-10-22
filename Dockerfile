@@ -7,6 +7,7 @@ RUN pnpm install --frozen-lockfile
 RUN pnpm build
 ENV NODE_ENV=production
 EXPOSE 4317
-RUN chmod +x /app/docker/entrypoint.sh
+RUN chmod +x /app/docker/entrypoint.sh && mkdir -p /data && chown -R node:node /app /data
+USER node
 ENTRYPOINT ["/app/docker/entrypoint.sh"]
 CMD ["pnpm", "start"]

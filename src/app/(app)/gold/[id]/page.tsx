@@ -86,6 +86,7 @@ export default async function GoldIdeaPage({ params }: PageProps<"/gold/[id]">) 
   }
   const [lastBar] = (await getRecentBars(1)).slice(-1);
   const startedMs = row.createdAt.getTime();
+  const now = nowMs();
   const played = replayIdea(
     {
       direction: row.direction,
@@ -95,11 +96,10 @@ export default async function GoldIdeaPage({ params }: PageProps<"/gold/[id]">) 
       targets: row.targets,
       startedAt: startedMs,
     },
-    await getEngineBars(new Date(startedMs), new Date(Date.now() + 60_000)),
+    await getEngineBars(new Date(startedMs), new Date(now + 60_000)),
     lastBar?.close ?? null,
     true,
   );
-  const now = nowMs();
   const section = goldSection(
     {
       sectionAtCall: row.sectionAtCall,

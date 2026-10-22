@@ -14,5 +14,7 @@ export const PERIOD_LABEL: Record<BillingPeriod, string> = { weekly: "week", mon
 export const stripePriceEnv = (tier: Tier, period: BillingPeriod) => `STRIPE_PRICE_${tier.toUpperCase()}_${period.toUpperCase()}`;
 
 export function billingMode(): "stripe" | "mock" {
-  return process.env.STRIPE_SECRET_KEY ? "stripe" : "mock";
+  if (process.env.STRIPE_SECRET_KEY) return "stripe";
+  if (process.env.NODE_ENV === "production" && process.env.ALLOW_MOCK_BILLING !== "1") return "stripe";
+  return "mock";
 }

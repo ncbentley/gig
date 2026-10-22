@@ -69,9 +69,14 @@ export async function sendEmail(to: string, subject: string, body: string) {
     console.info(`[mail] sent to=${to} subject="${subject}"`);
     return;
   }
+  if (process.env.NODE_ENV === "production" && process.env.DEV_MAILBOX !== "1") {
+    throw new Error("RESEND_API_KEY is required in production.");
+  }
   const db = await getDb();
   await db.insert(outboundEmails).values({ to, subject, body });
-  if (process.env.NODE_ENV !== "test") console.info(`[mail] to=${to} subject="${subject}"\n${body}`);
+  if (process.env.NODE_ENV !== "test" && process.env.NODE_ENV !== "production") {
+    console.info(`[mail] to=${to} subject="${subject}"\n${body}`);
+  }
 }
 
 export async function issueToken(userId: string, type: "verify_email" | "reset_password") {
@@ -93,12 +98,24 @@ export async function consumeToken(token: string, type: "verify_email" | "reset_
   return row.userId;
 }
 
+/** True when a verify_email token was already consumed by a link scanner but is still within its expiry window. */
+export async function isRecentlyVerifiedEmailToken(token: string): Promise<boolean> {
+  if (!token) return false;
+  const db = await getDb();
+  const [row] = await db
+    .select({ verifiedAt: users.emailVerifiedAt })
+    .from(authTokens)
+    .innerJoin(users, eq(users.id, authTokens.userId))
+    .where(and(eq(authTokens.id, sha256(token)), eq(authTokens.type, "verify_email"), gt(authTokens.expiresAt, new Date())));
+  return Boolean(row?.verifiedAt);
+}
+
 export async function sendVerificationEmail(user: Pick<User, "id" | "email">) {
   const token = await issueToken(user.id, "verify_email");
   await sendEmail(user.email, "Verify your email", `Confirm your email address:\n${appUrl()}/verify?token=${token}`);
 }
 
 export function devMailboxEnabled() {
-  if (process.env.RESEND_API_KEY) return false;
-  return process.env.NODE_ENV !== "production" || process.env.DEV_MAILBOX === "1";
+  if (process.env.RESEND_API_KEY || process.env.NODE_ENV === "production") return false;
+  return true;
 }

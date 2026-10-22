@@ -1,3 +1,13 @@
 ignoredBuiltDependencies:
   - sharp
   - unrs-resolver
+
+overrides:
+  source-map-js: '>=1.2.2'
+  esbuild: '^0.28.2'
+  vite: '>=8.3.5'
+
+auditConfig:
+  ignoreGhsas:
+    - GHSA-vfj7-8cjw-p6xm
+

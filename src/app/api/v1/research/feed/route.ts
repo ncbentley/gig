@@ -1,5 +1,5 @@
 import { apiError, json } from "@/server/api";
-import { rateLimit } from "@/server/auth/rate-limit";
+import { clientIp, rateLimit } from "@/server/auth/rate-limit";
 import { RESEARCH_FEED_PAGE_MAX, RESEARCH_FEED_WINDOW_MS, readResearchFeed } from "@/server/research/feed";
 import { bearerMatches, researchFeedBudget, researchFeedToken } from "@/server/research/token";
 
@@ -7,6 +7,8 @@ export async function GET(req: Request) {
   const expected = researchFeedToken();
   if (!expected) return apiError(503, "research_feed_disabled", "RESEARCH_FEED_TOKEN is not configured.");
   if (!bearerMatches(req.headers.get("authorization"), expected)) {
+    const authLimit = rateLimit(`research-feed-auth:${clientIp(req.headers)}`, 30, RESEARCH_FEED_WINDOW_MS);
+    if (!authLimit.ok) return apiError(429, "rate_limited", "Too many failed authentication attempts.");
     return apiError(401, "invalid_token", "Missing or invalid research feed token.");
   }
 

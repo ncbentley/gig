@@ -303,7 +303,7 @@ export async function handleStripeEvent(event: Stripe.Event) {
     case "charge.dispute.created": {
       const dispute = event.data.object as Stripe.Dispute;
       if (!dispute.charge) break;
-      let charge: Stripe.Charge =
+      const charge: Stripe.Charge =
         typeof dispute.charge === "string" ? await stripe.charges.retrieve(dispute.charge) : dispute.charge;
       const invoiceId = await invoiceIdForCharge(stripe, charge);
       if (invoiceId) {

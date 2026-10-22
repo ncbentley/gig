@@ -9,7 +9,7 @@ DIR="${DEPLOY_DIR:-/srv/gold}"
 cd "$(dirname "$0")/.."
 
 rsync -az --delete \
-  --exclude node_modules --exclude .next --exclude .data --exclude .git \
+  --exclude node_modules --exclude .next --exclude .data --exclude .git --exclude .worktrees \
   --exclude '/.env' --exclude '/.env.*' --exclude tsconfig.tsbuildinfo --exclude mockups \
   --exclude deploy/.env --exclude 'deploy/*.dump' \
   ./ "$HOST:$DIR/"

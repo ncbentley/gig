@@ -12,6 +12,7 @@ import {
   destroySession,
   getCurrentUser,
   hashPassword,
+  isRecentlyVerifiedEmailToken,
   issueToken,
   appUrl,
   sendEmail,
@@ -96,7 +97,7 @@ export async function resendVerificationAction(): Promise<FormState> {
 
 export async function verifyEmail(token: string) {
   const userId = await consumeToken(token, "verify_email");
-  if (!userId) return false;
+  if (!userId) return isRecentlyVerifiedEmailToken(token);
   const db = await getDb();
   await db.update(users).set({ emailVerifiedAt: new Date() }).where(eq(users.id, userId));
   return true;

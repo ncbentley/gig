@@ -67,6 +67,20 @@ describe("referral payouts", () => {
     await cleanupReferrer(db, referrer.id, customer.id);
   });
 
+  it("validates account holder name, routing number, and account number format", async () => {
+    const { db, referrer, customer } = await createReferrer();
+    await expect(
+      savePayoutAccount({ userId: referrer.id, accountHolderName: "A", routingNumber: "021000021", accountNumber: "123456789" }),
+    ).rejects.toThrow("Enter a valid account holder name.");
+    await expect(
+      savePayoutAccount({ userId: referrer.id, accountHolderName: "Ada", routingNumber: "12345", accountNumber: "123456789" }),
+    ).rejects.toThrow("Routing number must be 9 digits.");
+    await expect(
+      savePayoutAccount({ userId: referrer.id, accountHolderName: "Ada", routingNumber: "021000021", accountNumber: "12" }),
+    ).rejects.toThrow("Account number must be 4 to 17 digits.");
+    await cleanupReferrer(db, referrer.id, customer.id);
+  });
+
   it("refuses a non-numeric withdrawal amount", async () => {
     const { db, referrer, customer } = await createReferrer();
     await savePayoutAccount({
