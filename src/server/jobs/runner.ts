@@ -19,6 +19,8 @@ import { refreshSourceStats } from "@/server/statistics/service";
 import { finishImportIfIdle } from "@/server/telegram/import-status";
 import { dropSilentTrackedChannels, enqueueDueTelegramSyncs } from "@/server/telegram/schedule";
 import { syncTelegramSource } from "@/server/telegram";
+import { enqueuePendingGigActivity, runGigActivityJob } from "@/server/gig-activity/deliver";
+import { GigActivityDeliveryError } from "@/server/gig-activity/send";
 import { JOB_CONCURRENCY } from "./limits";
 import { enqueueJob, JOB_TYPES, type JobType } from "./queue";
 
@@ -132,6 +134,7 @@ const handlers: Record<JobType, Handler> = {
     const wrote = await syncDashboardCache();
     return { labels, wrote };
   },
+  GIG_ACTIVITY: async (p) => runGigActivityJob(p),
 };
 
 async function claimNext(type: JobType): Promise<Job | null> {
@@ -187,7 +190,8 @@ export async function runJob(job: Job) {
     if (!runner && job.type === "PROCESS_EVENT" && job.payloadJson.sourceId) await finishImportIfIdle(String(job.payloadJson.sourceId));
   } catch (err) {
     const message = (err as Error).stack ?? String(err);
-    const retry = job.attempts < job.maxAttempts;
+    const retryable = err instanceof GigActivityDeliveryError ? err.retryable : true;
+    const retry = retryable && job.attempts < job.maxAttempts;
     await db
       .update(jobs)
       .set({
@@ -295,6 +299,7 @@ export async function scheduleRecurring(kind: "minute" | "telegram" | "hourly" |
   if (kind === "hourly") {
     await enqueueJob("RECONCILE_SUBSCRIPTIONS", {}, { dedupeKey: "reconcile" });
     await enqueueJob("MARKET_DIRECTION", {}, { dedupeKey: "market-direction" });
+    await enqueuePendingGigActivity();
   }
   if (kind === "board") await enqueueJob("REFRESH_BOARD", {}, { dedupeKey: "refresh-board" });
 }

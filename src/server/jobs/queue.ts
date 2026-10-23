@@ -19,6 +19,7 @@ export const JOB_TYPES = [
   "CONSOLIDATE_SIGNALS",
   "REFRESH_BOARD",
   "RELABEL_FEED",
+  "GIG_ACTIVITY",
 ] as const;
 export type JobType = (typeof JOB_TYPES)[number];
 
