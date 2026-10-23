@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { getDb, closeDb } from "@/server/db";
 import { runMigrations } from "@/server/db/migrate";
-import { accessPasses, users } from "@/server/db/schema";
+import { accessPasses, gigActivityEvents, users } from "@/server/db/schema";
 import { installAnalyticsSender } from "@/server/analytics/posthog";
 import { PASS_MS } from "@/server/entitlements/trial";
 import { PASS_ALREADY_USED, PASS_PRICE_CENTS, activePass, completeMockPass, grantPassFromStripe, refundPass, refundPassForStripeCharge } from "./pass";
@@ -121,6 +121,19 @@ describe("refundPassForStripeCharge", () => {
     const [row] = await db.select().from(accessPasses).where(eq(accessPasses.id, pass.id));
     expect(row?.status).toBe("paid");
 
+    await db.delete(accessPasses).where(eq(accessPasses.userId, user.id));
+    await db.delete(users).where(eq(users.id, user.id));
+  });
+});
+
+describe("completeMockPass activity", () => {
+  it("does not write a gig activity row", async () => {
+    delete process.env.STRIPE_SECRET_KEY;
+    const db = await getDb();
+    const [user] = await db.insert(users).values({ email: `mock-pass-act-${crypto.randomUUID()}@example.com`, passwordHash: "x" }).returning();
+    const pass = await completeMockPass(user.id, new Date("2026-10-01T12:00:00.000Z"));
+    const rows = await db.select().from(gigActivityEvents).where(eq(gigActivityEvents.id, `paid:pass:${pass.id}`));
+    expect(rows).toEqual([]);
     await db.delete(accessPasses).where(eq(accessPasses.userId, user.id));
     await db.delete(users).where(eq(users.id, user.id));
   });

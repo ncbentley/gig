@@ -12,6 +12,7 @@ import {
   reverseCollectedPayment,
 } from "@/server/referrals/record";
 import { ENTITLED_STATUSES, getEntitledSubscription, getPlan } from "./subscriptions";
+import { reportPaidInvoice, reportPaidPass } from "./gig-activity";
 import { grantPassFromStripe, refundPassForStripeCharge } from "./pass";
 
 export { getEntitledSubscription, getPlan } from "./subscriptions";
@@ -275,7 +276,8 @@ export async function handleStripeEvent(event: Stripe.Event) {
       if (session.mode === "payment" && session.metadata?.kind === "pass") {
         const userId = session.metadata.userId ?? session.client_reference_id;
         if (userId) {
-          await grantPassFromStripe({ userId, paymentId: session.id, paidAt: new Date() });
+          const granted = await grantPassFromStripe({ userId, paymentId: session.id, paidAt: new Date() });
+          await reportPaidPass({ livemode: event.livemode, paymentId: session.id, granted });
         }
         break;
       }
@@ -349,6 +351,13 @@ export async function handleStripeEvent(event: Stripe.Event) {
         tier: v.tier,
         period: v.period,
         provider: "stripe",
+      });
+      await reportPaidInvoice({
+        livemode: event.livemode,
+        amountPaid: invoice.amount_paid,
+        subscriptionId,
+        paidAt: invoice.status_transitions?.paid_at,
+        created: invoice.created,
       });
       break;
     }
