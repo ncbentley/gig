@@ -3,7 +3,7 @@
  * is built here, so locked fields are never serialized (not just hidden in the UI).
  */
 import type { AiAnalysis, Signal, SignalOutcome, SignalTarget, Source, Tier } from "@/server/db/schema";
-import { gate, type Access, type Gated } from "@/server/entitlements/access";
+import { can, gate, type Access, type Gated } from "@/server/entitlements/access";
 import type { TierConfig } from "@/server/entitlements/config";
 import type { MemberConsensus } from "@/server/consensus/rules";
 import type { SourceStatistics } from "@/server/statistics/compute";
@@ -11,6 +11,7 @@ import type { SimilarTradesResult } from "@/server/similar";
 
 type Config = Record<Tier, TierConfig>;
 const CLOSED = new Set(["WON", "LOST", "BREAKEVEN"]);
+const SETTLED = new Set(["WON", "LOST", "BREAKEVEN", "CANCELLED", "EXPIRED", "MANUAL_REVIEW"]);
 const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null);
 
 export function redactIdentities(text: string, identities: Array<string | null | undefined>) {
@@ -46,8 +47,20 @@ export interface SignalBundle {
   outcome: SignalOutcome | null;
 }
 
+function presentLevels(signal: Signal, targets: SignalTarget[]) {
+  return {
+    stopLoss: signal.stopLoss,
+    targets: [...targets]
+      .sort((a, b) => a.targetIndex - b.targetIndex)
+      .map((t) => ({ index: t.targetIndex, price: t.price, status: t.status, hitAt: iso(t.hitAt) })),
+  };
+}
+
 export function presentSignalListItem({ signal, source, targets, outcome }: SignalBundle, access: Access, config: Config) {
   const isClosed = outcome ? CLOSED.has(outcome.classification) : false;
+  const showLevels = can(access, "signals.levels");
+  const showHistory = can(access, "signals.basic_result");
+  const status = !showHistory && SETTLED.has(signal.status) ? "CLOSED" : !showLevels && signal.status === "PARTIAL" ? "ACTIVE" : signal.status;
   return {
     id: signal.id,
     source: presentSourceIdentity(source, access),
@@ -56,13 +69,10 @@ export function presentSignalListItem({ signal, source, targets, outcome }: Sign
     entryType: signal.entryType,
     entryMin: signal.entryMin,
     entryMax: signal.entryMax,
-    stopLoss: signal.stopLoss,
-    targets: [...targets]
-      .sort((a, b) => a.targetIndex - b.targetIndex)
-      .map((t) => ({ index: t.targetIndex, price: t.price, status: t.status, hitAt: iso(t.hitAt) })),
+    levels: gate(access, "signals.levels", config, () => presentLevels(signal, targets)),
     signalTime: signal.signalTime.toISOString(),
-    closedAt: iso(signal.closedAt),
-    status: signal.status,
+    closedAt: showHistory ? iso(signal.closedAt) : null,
+    status,
     result: gate(access, "signals.basic_result", config, () =>
       isClosed && outcome
         ? { classification: outcome.classification, rResult: outcome.rResult, exitReason: outcome.exitReason }
@@ -119,12 +129,18 @@ export function presentSignalDetail(input: SignalDetailInput, access: Access, co
     outcome: {
       calcVersion: outcome?.calcVersion ?? null,
       kind: outcome?.kind ?? null,
-      ambiguous: outcome?.ambiguous ?? false,
-      entered: outcome?.entered ?? false,
-      entryTime: iso(outcome?.entryTime),
-      entryPrice: outcome?.entryPrice ?? null,
+      progress: gate(access, "signals.basic_result", config, () =>
+        outcome
+          ? {
+              ambiguous: outcome.ambiguous,
+              entered: outcome.entered,
+              entryTime: iso(outcome.entryTime),
+              entryPrice: outcome.entryPrice,
+              notes: detail.notes ?? [],
+            }
+          : null,
+      ),
       basic: base.result,
-      notes: detail.notes ?? [],
       excursionSummary: gate(access, "outcome.excursion_summary", config, () =>
         outcome?.entered ? { mfeR: outcome.mfeR, maeR: outcome.maeR } : null,
       ),

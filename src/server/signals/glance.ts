@@ -1,5 +1,5 @@
 import { and, eq, inArray } from "drizzle-orm";
-import { tradeGlance, type IdeaGlance } from "@/lib/trade-glance";
+import { tradeGlance, zoneDistance, type IdeaGlance } from "@/lib/trade-glance";
 import { getDb } from "@/server/db";
 import { signalOutcomes } from "@/server/db/schema";
 import type { IdeaPhase } from "@/server/ideas/phase";
@@ -38,6 +38,17 @@ export async function annotateSignalGlance(items: SignalListItem[], spot: number
     const outcome = byId.get(item.id);
     const detail = (outcome?.detailJson ?? {}) as Record<string, unknown>;
     const phase = phaseOf(item.status);
+    if (item.levels.locked || item.result.locked) {
+      return {
+        ...item,
+        glance: {
+          hits: [],
+          r: null,
+          realized: false,
+          distance: item.status === "PENDING" ? zoneDistance(item.entryMin, item.entryMax, spot) : null,
+        },
+      };
+    }
     return {
       ...item,
       glance: tradeGlance({
@@ -53,7 +64,7 @@ export async function annotateSignalGlance(items: SignalListItem[], spot: number
               risk: typeof detail.risk === "number" ? detail.risk : null,
               rResult: outcome.rResult,
               exitTime: outcome.exitTime ? outcome.exitTime.getTime() : null,
-              targets: item.targets.map((target) => ({ hitAt: target.hitAt ? Date.parse(target.hitAt) : null })),
+              targets: item.levels.data.targets.map((target) => ({ hitAt: target.hitAt ? Date.parse(target.hitAt) : null })),
               checkpoint: checkpointOf(detail),
             }
           : null,

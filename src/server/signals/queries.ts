@@ -160,6 +160,13 @@ export async function listSignalsForViewer(
   const { applied: f, ignored } = resolveSignalFilters(access, filters, opts);
 
   const cutoff = historyCutoff(access);
+  if (!can(access, "signals.basic_result")) {
+    const asksForHistory = f.status === "CLOSED" || (f.status !== undefined && (CLOSED as string[]).includes(f.status));
+    if (asksForHistory) {
+      return { items: [], total: 0, appliedFilters: f, ignoredFilters: ignored, historyCutoff: cutoff?.toISOString() ?? null };
+    }
+    if (!f.status) f.status = "OPEN";
+  }
   const conds: SQL[] = [sql`${signals.status} <> 'INVALID'`];
   if (!access.isAdmin) conds.push(eq(sources.isQa, false));
   if (cutoff) conds.push(gte(signals.signalTime, cutoff));

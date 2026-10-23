@@ -14,12 +14,16 @@ describe("trial access", () => {
     const access = accessForMember({ createdAt: legacyCreatedAt, now: during, subscription: null, config });
     expect(access.tier).toBeNull();
     expect(can(access, "signals.core")).toBe(true);
+    expect(can(access, "signals.levels")).toBe(false);
+    expect(can(access, "signals.basic_result")).toBe(false);
     expect(access.historyDays).toBe(7);
   });
 
-  it("locks the book after the trial when no plan is chosen", () => {
+  it("keeps the call visible and locks stops, targets, and history after the trial", () => {
     const access = accessForMember({ createdAt: legacyCreatedAt, now: after, subscription: null, config });
-    expect(can(access, "signals.core")).toBe(false);
+    expect(can(access, "signals.core")).toBe(true);
+    expect(can(access, "signals.levels")).toBe(false);
+    expect(can(access, "signals.basic_result")).toBe(false);
   });
 
   it("keeps basic access when basic is chosen during the trial", () => {
@@ -85,7 +89,7 @@ describe("trial access", () => {
     expect(access.tier).toBe("gold");
   });
 
-  it("gives a new account no signal access when it has no pass and no plan", () => {
+  it("gives a new account the free call book when it has no pass and no plan", () => {
     const access = accessForMember({
       createdAt: newAccount,
       now: new Date(newAccount.getTime() + 1000),
@@ -93,7 +97,9 @@ describe("trial access", () => {
       passEndsAt: null,
       config,
     });
-    expect(can(access, "signals.core")).toBe(false);
+    expect(can(access, "signals.core")).toBe(true);
+    expect(can(access, "signals.levels")).toBe(false);
+    expect(can(access, "signals.basic_result")).toBe(false);
   });
 
   it("grants gold until the pass ends, even with a basic subscription", () => {

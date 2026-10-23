@@ -197,6 +197,13 @@
       "when": 1792972800000,
       "tag": "0027_gig_activity",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1793059200000,
+      "tag": "0028_signal_levels",
+      "breakpoints": true
     }
   ]
 }

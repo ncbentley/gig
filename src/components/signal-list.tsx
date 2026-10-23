@@ -9,8 +9,23 @@ import type { SignalListItem } from "@/server/presenters";
 import { nowMs } from "@/lib/clock";
 
 type SignalRow = SignalListItem & { glance?: IdeaGlance };
+type TargetRow = { index: number; price: number | null; status: string; hitAt: string | null };
 
-function Targets({ targets }: { targets: SignalListItem["targets"] }) {
+function readLevels(item: SignalRow): { locked: boolean; stopLoss: number | null; targets: TargetRow[] } {
+  const levels = item.levels;
+  if (levels && typeof levels === "object" && "locked" in levels) {
+    if (levels.locked) return { locked: true, stopLoss: null, targets: [] };
+    return { locked: false, stopLoss: levels.data.stopLoss, targets: levels.data.targets };
+  }
+  const legacy = item as SignalRow & { stopLoss?: number | null; targets?: TargetRow[] };
+  return { locked: false, stopLoss: legacy.stopLoss ?? null, targets: Array.isArray(legacy.targets) ? legacy.targets : [] };
+}
+
+function LockedValue() {
+  return <span className="text-xs font-medium text-muted-foreground">Locked</span>;
+}
+
+function Targets({ targets }: { targets: TargetRow[] }) {
   if (!targets.length) return <span className="text-muted-foreground">—</span>;
   return (
     <span className="flex flex-wrap gap-x-2.5 gap-y-0.5">
@@ -37,8 +52,9 @@ function NowMark({ item }: { item: SignalRow }) {
     const distance = glance.distance;
     if (!distance) return <span className="text-muted-foreground">—</span>;
     if (distance.place === "inside") return <span className="text-sm font-medium text-primary">At entry</span>;
+    const levels = readLevels(item);
     const edge = distance.place === "above" ? item.entryMax : item.entryMin;
-    const risk = item.stopLoss == null ? null : Math.abs(edge - item.stopLoss);
+    const risk = levels.locked || levels.stopLoss == null ? null : Math.abs(edge - levels.stopLoss);
     const near = risk != null && risk > 0 && distance.points <= risk;
     return (
       <span className={cn("font-mono text-sm tabular-nums", near ? "font-semibold text-primary" : "text-foreground/80")}>
@@ -46,6 +62,7 @@ function NowMark({ item }: { item: SignalRow }) {
       </span>
     );
   }
+  if (item.result.locked || readLevels(item).locked) return <LockedValue />;
   return <RValue value={glance.r} className="font-semibold" />;
 }
 
@@ -104,6 +121,7 @@ export function SignalList({
           </TableHeader>
           <TableBody>
             {items.map((s) => {
+              const levels = readLevels(s);
               const cell = cn(
                 "border-y bg-[#081328]/85 transition-colors group-hover:bg-[#0c1b3a] first:rounded-l-xl first:border-l last:rounded-r-xl last:border-r",
                 ROW_EDGE[s.direction === "LONG" ? "long" : "short"],
@@ -130,9 +148,11 @@ export function SignalList({
                     <div className="mt-0.5 text-[11px] text-muted-foreground capitalize">{s.entryType.toLowerCase()}</div>
                   </TableCell>
                   <TableCell className={cn(cell, "font-mono font-semibold tabular-nums")}>{fmtEntry(s.entryMin, s.entryMax)}</TableCell>
-                  <TableCell className={cn(cell, "font-mono tabular-nums", s.stopLoss !== null && "text-loss")}>{fmtPrice(s.stopLoss)}</TableCell>
+                  <TableCell className={cn(cell, "font-mono tabular-nums", !levels.locked && levels.stopLoss !== null && "text-loss")}>
+                    {levels.locked ? <LockedValue /> : fmtPrice(levels.stopLoss)}
+                  </TableCell>
                   <TableCell className={cn(cell, "max-w-56 text-sm")}>
-                    <Targets targets={s.targets} />
+                    {levels.locked ? <LockedValue /> : <Targets targets={levels.targets} />}
                   </TableCell>
                   <TableCell className={cn(cell, "whitespace-nowrap")}>
                     <NowMark item={s} />
@@ -154,6 +174,7 @@ export function SignalList({
       </div>
       <div className="grid gap-2 md:hidden">
         {items.map((s) => {
+          const levels = readLevels(s);
           const long = s.direction === "LONG";
           return (
             <Link
@@ -187,7 +208,9 @@ export function SignalList({
                 </div>
                 <div>
                   <div className="text-muted-foreground">Stop loss</div>
-                  <div className={cn("font-mono tabular-nums", s.stopLoss !== null && "text-loss")}>{fmtPrice(s.stopLoss)}</div>
+                  <div className={cn("font-mono tabular-nums", !levels.locked && levels.stopLoss !== null && "text-loss")}>
+                    {levels.locked ? <LockedValue /> : fmtPrice(levels.stopLoss)}
+                  </div>
                 </div>
                 <div className="text-right">
                   <div className="text-muted-foreground">Result</div>
@@ -195,7 +218,7 @@ export function SignalList({
                 </div>
               </div>
               <div className="mt-2.5 flex items-center justify-between gap-3 border-t border-glow/15 pt-2 text-[11px] text-muted-foreground">
-                <Targets targets={s.targets} />
+                {levels.locked ? <LockedValue /> : <Targets targets={levels.targets} />}
                 <span className="shrink-0">{fmtAge(s.signalTime, now)} ago</span>
               </div>
             </Link>

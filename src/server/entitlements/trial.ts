@@ -1,5 +1,5 @@
 import type { Tier } from "@/server/db/schema";
-import { ANONYMOUS, buildAccess, freeAccess, type Access } from "./access";
+import { buildAccess, freeAccess, type Access } from "./access";
 import { appliedComplimentary } from "./complimentary";
 import type { TierConfig } from "./config";
 
@@ -37,6 +37,5 @@ export function accessForMember(input: {
     return buildAccess(subscription.tier, config);
   }
   if (grant) return buildAccess(grant, config);
-  if (inTrial(createdAt, now)) return freeAccess();
-  return ANONYMOUS;
+  return freeAccess();
 }

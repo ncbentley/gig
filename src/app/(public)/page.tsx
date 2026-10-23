@@ -89,6 +89,14 @@ function hasTradePlan(targetCount: number, stopLoss: number | null) {
   return stopLoss != null && targetCount >= 1 && targetCount <= 9;
 }
 
+function signalPlan(item: { stopLoss?: number | null; targets?: unknown[] | { length: number }; levels?: { locked: boolean; data?: { stopLoss: number | null; targets: unknown[] } } }) {
+  if (item.levels && "locked" in item.levels) {
+    if (item.levels.locked || !item.levels.data) return { stopLoss: null, count: 0 };
+    return { stopLoss: item.levels.data.stopLoss, count: item.levels.data.targets.length };
+  }
+  return { stopLoss: item.stopLoss ?? null, count: Array.isArray(item.targets) ? item.targets.length : 0 };
+}
+
 function byNewest<T>(items: T[], time: (item: T) => string) {
   return [...items].sort((a, b) => Date.parse(time(b)) - Date.parse(time(a)));
 }
@@ -133,7 +141,10 @@ export default async function LandingPage() {
   const { top, eligibleCount, sourceCount, totalClosed } = await getTopSources(sources.map((s) => s.id), 8);
   const monthly = new Map(plans.filter((p) => p.period === "monthly").map((p) => [p.tier, p]));
   const basicActive = byNewest(
-    (basicBook?.signals?.open ?? []).filter((item) => item.status !== "PENDING" && hasTradePlan(item.targets.length, item.stopLoss)),
+    (basicBook?.signals?.open ?? []).filter((item) => {
+      const plan = signalPlan(item);
+      return item.status !== "PENDING" && hasTradePlan(plan.count, plan.stopLoss);
+    }),
     (item) => item.signalTime,
   );
   const silverIdeas = byNewest(

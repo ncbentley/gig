@@ -187,7 +187,8 @@ describe("tier visibility", () => {
     expect(detail.direction).toBe("LONG");
     expect(detail.entryMin).toBe(2650);
     expect(detail.entryMax).toBe(2652);
-    expect(detail.stopLoss).toBe(2640);
+    expect(detail.levels.locked).toBe(false);
+    if (!detail.levels.locked) expect(detail.levels.data.stopLoss).toBe(2640);
     expect(detail.consensus.grade.locked).toBe(true);
     expect(detail.consensus.timing.locked).toBe(true);
     expect(detail.consensus.mapping.locked).toBe(true);

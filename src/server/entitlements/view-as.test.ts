@@ -33,7 +33,8 @@ describe("admin view-as", () => {
     const access = accessForPreview(DEFAULT_TIER_CONFIG, "none");
     expect(access.tier).toBeNull();
     expect(can(access, "signals.core")).toBe(true);
-    expect(can(access, "signals.basic_result")).toBe(true);
+    expect(can(access, "signals.levels")).toBe(false);
+    expect(can(access, "signals.basic_result")).toBe(false);
     expect(can(access, "sources.stats.summary")).toBe(false);
     expect(access.historyDays).toBe(7);
   });

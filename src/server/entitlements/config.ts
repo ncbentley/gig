@@ -1,9 +1,10 @@
 import type { Tier } from "@/server/db/schema";
 
 export const FEATURE_CATALOG = {
-  "signals.core": "Signal source, instrument, direction, entry, stop, targets, time and status",
+  "signals.core": "Signal source, instrument, direction, entry, time and open status",
+  "signals.levels": "Stop loss and targets",
   "signals.raw_text": "Original source text",
-  "signals.basic_result": "Final result after the trade closes",
+  "signals.basic_result": "Closed-trade history and the final result",
   "sources.stats.summary": "Source lifetime count, win rate, average R and expectancy",
   "sources.stats.recent": "Recent 10 / 30 trade performance",
   "sources.stats.time_of_day": "Performance by hour of day",
@@ -30,10 +31,11 @@ export const FEATURE_CATALOG = {
 export type Feature = keyof typeof FEATURE_CATALOG;
 export const ALL_FEATURES = Object.keys(FEATURE_CATALOG) as Feature[];
 
-export const FREE_FEATURES: Feature[] = ["signals.core", "signals.basic_result"];
+export const FREE_FEATURES: Feature[] = ["signals.core"];
 export const FREE_HISTORY_DAYS = 7;
 
-const SILVER: Feature[] = [...FREE_FEATURES, "sources.stats.summary"];
+const BASIC: Feature[] = [...FREE_FEATURES, "signals.levels", "signals.basic_result"];
+const SILVER: Feature[] = [...BASIC, "sources.stats.summary"];
 const GOLD: Feature[] = [
   ...SILVER,
   "sources.stats.recent",
@@ -58,7 +60,7 @@ export interface TierConfig {
 
 /** Seed defaults. The live configuration is stored in the tier_entitlements table. */
 export const DEFAULT_TIER_CONFIG: Record<Tier, TierConfig> = {
-  basic: { features: FREE_FEATURES, historyDays: FREE_HISTORY_DAYS },
+  basic: { features: BASIC, historyDays: FREE_HISTORY_DAYS },
   silver: { features: SILVER, historyDays: 180 },
   gold: { features: GOLD, historyDays: null },
 };

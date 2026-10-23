@@ -117,15 +117,18 @@ export default async function SignalDetailPage({ params }: PageProps<"/signals/[
   const range = tradeChartRange(signalMs, d.closedAt ? Date.parse(d.closedAt) : null, nowMs());
   const bars = await getEngineBars(range.from, range.to);
   const points = downsample(bars);
+  const plan = d.levels.locked ? null : d.levels.data;
   const levels = [
     { price: d.entryMin, label: d.entryMin === d.entryMax ? "Entry" : "Zone", tone: "entry" as const },
     ...(d.entryMin !== d.entryMax ? [{ price: d.entryMax, label: "Zone", tone: "entry" as const }] : []),
-    ...(d.stopLoss !== null ? [{ price: d.stopLoss, label: "SL", tone: "stop" as const }] : []),
-    ...d.targets.flatMap((t) => (t.price === null ? [] : [{ price: t.price, label: `TP${t.index}`, tone: "target" as const }])),
+    ...(plan?.stopLoss != null ? [{ price: plan.stopLoss, label: "SL", tone: "stop" as const }] : []),
+    ...(plan?.targets ?? []).flatMap((t) => (t.price === null ? [] : [{ price: t.price, label: `TP${t.index}`, tone: "target" as const }])),
   ];
   const excursion = d.outcome.excursionDetail;
   const timeline = (!excursion.locked && excursion.data ? excursion.data.timeline : []) as { t: number; type: string; note?: string }[];
   const markers = tradeMarkers({ calledAt: signalMs, timeline });
+  const progress = d.outcome.progress;
+  const filledAt = !progress.locked && progress.data?.entryTime ? Date.parse(progress.data.entryTime) : null;
   const uid = viewer.user?.id;
   const session = sessionFor(new Date(d.signalTime));
   const open = d.status === "PENDING" || d.status === "ACTIVE" || d.status === "PARTIAL";
@@ -158,24 +161,38 @@ export default async function SignalDetailPage({ params }: PageProps<"/signals/[
           <Section icon={Crosshair} title="Signal" description="As published by the source and normalized by the parser.">
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               <Stat tone="gold" label={d.entryType === "ZONE" ? "Entry zone" : "Entry"} value={<span className="font-mono text-base">{fmtEntry(d.entryMin, d.entryMax)}</span>} />
-              <Stat tone="loss" label="Stop loss" value={<span className={cn("font-mono text-base", d.stopLoss !== null && "text-loss")}>{fmtPrice(d.stopLoss)}</span>} />
+              <Stat
+                tone="loss"
+                label="Stop loss"
+                value={
+                  plan ? (
+                    <span className={cn("font-mono text-base", plan.stopLoss !== null && "text-loss")}>{fmtPrice(plan.stopLoss)}</span>
+                  ) : (
+                    <span className="text-sm text-muted-foreground">Locked</span>
+                  )
+                }
+              />
               <Stat
                 tone="win"
                 label="Targets"
                 value={
-                  <span className="flex flex-col font-mono text-sm">
-                    {d.targets.length ? d.targets.map((t) => (
-                      <span key={t.index} className={cn(t.status === "HIT" && "text-win", t.status === "AMBIGUOUS" && "text-amber-300")}>
-                        TP{t.index} {fmtPrice(t.price)}
-                      </span>
-                    )) : "—"}
-                  </span>
+                  plan ? (
+                    <span className="flex flex-col font-mono text-sm">
+                      {plan.targets.length ? plan.targets.map((t) => (
+                        <span key={t.index} className={cn(t.status === "HIT" && "text-win", t.status === "AMBIGUOUS" && "text-amber-300")}>
+                          TP{t.index} {fmtPrice(t.price)}
+                        </span>
+                      )) : "—"}
+                    </span>
+                  ) : (
+                    <span className="text-sm text-muted-foreground">Locked</span>
+                  )
                 }
               />
               <Stat label="Parser confidence" value={fmtPct(d.parserConfidence)} hint={`version ${d.version}${d.sourceConfidenceText ? ` · source says “${d.sourceConfidenceText}”` : ""}`} />
             </div>
             <div className="mt-4 rounded-xl bg-[#050c1c]/80 p-2 ring-1 ring-glow/25 shadow-[inset_0_0_30px_-12px_rgb(47_123_255/0.4)]">
-              <PriceChart points={points} levels={levels} markers={markers} notice={marketDataNotice({ bars, calledAt: signalMs, filledAt: d.outcome.entryTime ? Date.parse(d.outcome.entryTime) : null })} />
+              <PriceChart points={points} levels={levels} markers={markers} notice={marketDataNotice({ bars, calledAt: signalMs, filledAt })} />
             </div>
             {!d.rawText.locked && d.rawText.data && (
               <div className="mt-4">
@@ -204,15 +221,29 @@ export default async function SignalDetailPage({ params }: PageProps<"/signals/[
           </Section>
 
           <Section icon={Target} title="Outcome" description={`Deterministic replay against 1-minute XAU/USD bars · ${d.outcome.calcVersion ?? "not yet calculated"}${d.outcome.kind === "override" ? " · manual override" : ""}`}>
-            {d.outcome.ambiguous && (
+            {!progress.locked && progress.data?.ambiguous && (
               <div className="mb-3 flex gap-2 rounded-lg border border-amber-400/30 bg-amber-400/5 p-3 text-xs text-amber-200">
                 <Info className="size-4 shrink-0" />
                 The stop and a target were both touched inside one 1-minute candle. The order cannot be determined from minute data, so no result is assigned.
               </div>
             )}
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <Stat label="Entered" value={d.outcome.entered ? "Yes" : "No"} hint={d.outcome.entryTime ? fmtDateTime(d.outcome.entryTime) : undefined} />
-              <Stat tone="gold" label="Fill price" value={<span className="font-mono text-base">{fmtPrice(d.outcome.entryPrice)}</span>} />
+              {progress.locked ? (
+                <Stat label="Entered" value={<span className="text-sm text-muted-foreground">Locked</span>} />
+              ) : (
+                <Stat label="Entered" value={progress.data?.entered ? "Yes" : "No"} hint={progress.data?.entryTime ? fmtDateTime(progress.data.entryTime) : undefined} />
+              )}
+              <Stat
+                tone="gold"
+                label="Fill price"
+                value={
+                  progress.locked ? (
+                    <span className="text-sm text-muted-foreground">Locked</span>
+                  ) : (
+                    <span className="font-mono text-base">{fmtPrice(progress.data?.entryPrice)}</span>
+                  )
+                }
+              />
               <GatedView gated={d.outcome.basic} title="Result" userId={uid} compact>
                 {(r) => (
                   <Stat
@@ -227,9 +258,9 @@ export default async function SignalDetailPage({ params }: PageProps<"/signals/[
                 {(x) => <Stat label="MFE / MAE" value={x ? <span className="text-base"><RValue value={x.mfeR} /> / <RValue value={x.maeR === null ? null : -x.maeR} /></span> : "—"} hint="in R, after entry" />}
               </GatedView>
             </div>
-            {d.outcome.notes.length > 0 && (
+            {!progress.locked && progress.data && progress.data.notes.length > 0 && (
               <ul className="mt-3 space-y-1 text-xs text-muted-foreground">
-                {d.outcome.notes.map((n) => (
+                {progress.data.notes.map((n) => (
                   <li key={n}>• {n}</li>
                 ))}
               </ul>

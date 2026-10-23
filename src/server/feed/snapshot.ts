@@ -3,7 +3,7 @@ import { publishFeedRevision } from "@/server/feed/hub";
 import { getDb } from "@/server/db";
 import { boardPosts, consolidatedIdeas, dashboardSnapshots, feedRevisions, goldBookEntries, marketDirectionSnapshots, signalTargets, signals, sourceStats } from "@/server/db/schema";
 import { latestMarketDirection } from "@/server/direction/service";
-import { buildAccess, freeAccess, historyCutoff, type Access } from "@/server/entitlements/access";
+import { buildAccess, can, freeAccess, historyCutoff, type Access } from "@/server/entitlements/access";
 import { getTierConfig, type Viewer } from "@/server/entitlements/service";
 import { annotateIdeaGlance } from "@/server/ideas/glance";
 import { listIdeasForViewer } from "@/server/ideas/service";
@@ -14,7 +14,7 @@ import type { ListedIdea } from "@/server/ideas/service";
 import { byNewest, goldBookCards } from "@/server/gold/sections";
 import type { SignalListItem } from "@/server/presenters";
 
-const CACHE_VERSION = "v6";
+const CACHE_VERSION = "v7";
 
 export interface BookSectionsCache<T> {
   available: T[];
@@ -254,12 +254,13 @@ async function buildSnapshot(view: DashboardView, config: Awaited<ReturnType<typ
       annotateSignalGlance(open.items, spot),
       annotateSignalGlance(closed.items, spot),
     ]);
+    const showHistory = can(viewer.access, "signals.basic_result");
     cache.signals = {
       open: openItems,
-      closed: closedItems,
+      closed: showHistory ? closedItems : [],
       active: counts.active,
       pending: counts.pending,
-      total: open.total + closed.total,
+      total: open.total + (showHistory ? closed.total : 0),
       historyCount: closed.total,
     };
   }

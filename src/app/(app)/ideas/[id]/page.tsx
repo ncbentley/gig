@@ -61,6 +61,19 @@ export default async function IdeaPage({ params }: PageProps<"/ideas/[id]">) {
       </>
     );
   }
+  if (!can(viewer.access, "signals.levels")) {
+    return (
+      <>
+        <PageHeader title="Idea" icon={Layers} description="Signals consolidated onto one entry." />
+        <LockedPanel
+          feature="signals.levels"
+          requiredTier={lowestTierWith("signals.levels", viewer.config)}
+          title="Stops and targets are included with Basic"
+          userId={viewer.user?.id}
+        />
+      </>
+    );
+  }
   const [lastBar] = (await getRecentBars(1)).slice(-1);
   const result = await getIdeaForViewer(id, viewer, lastBar?.close ?? null);
   if (result.kind === "not_found") notFound();

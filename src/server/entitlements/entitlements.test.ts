@@ -148,6 +148,7 @@ describe("access", () => {
 
   it("reports the lowest tier that unlocks a feature", () => {
     expect(lowestTierWith("signals.core", config)).toBe("basic");
+    expect(lowestTierWith("signals.levels", config)).toBe("basic");
     expect(lowestTierWith("similar.summary", config)).toBe("gold");
     expect(lowestTierWith("ai.patterns", config)).toBeNull();
     expect(lowestTierWith("consensus.grade", config)).toBeNull();
@@ -192,11 +193,12 @@ describe("access", () => {
     expect(tierForSignalTime(twoHundredDaysAgo, config, now)).toBe("gold");
   });
 
-  it("gives a signed-in user with no subscription the raw feed for seven days", () => {
+  it("gives a signed-in user with no subscription the call, without stops, targets, or results", () => {
     const free = freeAccess();
     expect(free.tier).toBeNull();
     expect(can(free, "signals.core")).toBe(true);
-    expect(can(free, "signals.basic_result")).toBe(true);
+    expect(can(free, "signals.levels")).toBe(false);
+    expect(can(free, "signals.basic_result")).toBe(false);
     expect(historyCutoff(free, now)?.toISOString()).toBe("2026-01-25T12:00:00.000Z");
   });
 
@@ -208,9 +210,42 @@ describe("access", () => {
 });
 
 describe("signal detail projection", () => {
+  it("shows a free member the call, the time, and the entry, and withholds stops, targets, and history", () => {
+    const d = presentSignalDetail(
+      {
+        signal,
+        source: { id: "src1", name: "Src", nickname: "Amber Fox", slug: "src", isQa: false },
+        targets,
+        outcome,
+        rawText: "XAUUSD BUY ZONE",
+        updates: [],
+        sourceStats: stats,
+        similar: null,
+        analysis: null,
+      },
+      freeAccess(),
+      config,
+    );
+    expect(d.direction).toBe("LONG");
+    expect(d.entryMin).toBe(3399);
+    expect(d.entryMax).toBe(3400);
+    expect(d.signalTime).toBe(now.toISOString());
+    expect(d.status).toBe("CLOSED");
+    expect(d.levels.locked).toBe(true);
+    expect(d.result.locked).toBe(true);
+    expect(d.outcome.progress.locked).toBe(true);
+    const json = JSON.stringify(d);
+    expect(json).not.toContain("3395");
+    expect(json).not.toContain("3405");
+    expect(json).not.toContain("WON");
+    expect(json).not.toContain("XAUUSD BUY ZONE");
+  });
+
   it("silver receives the core signal and basic result but nothing from higher tiers", () => {
     const d = detailFor(silver);
     expect(d.entryMin).toBe(3399);
+    expect(d.levels.locked).toBe(false);
+    if (!d.levels.locked) expect(d.levels.data.stopLoss).toBe(3395);
     expect(d.rawText.locked).toBe(true);
     expect(JSON.stringify(d)).not.toContain("XAUUSD BUY ZONE");
     expect(d.result.locked).toBe(false);

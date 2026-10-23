@@ -19,6 +19,7 @@ const STATUS_STYLE: Record<string, string> = {
   MANUAL_REVIEW: "border-amber-400/40 bg-amber-400/10 text-amber-300",
   AMBIGUOUS: "border-amber-400/40 bg-amber-400/10 text-amber-300",
   OPEN: "border-primary/50 bg-primary/10 text-primary",
+  CLOSED: "border-border bg-muted/60 text-muted-foreground",
 };
 
 const STATUS_LABEL: Record<string, string> = { MANUAL_REVIEW: "Ambiguous", BREAKEVEN: "Breakeven" };

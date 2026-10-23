@@ -1,11 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Activity, History, Hourglass, Radar } from "lucide-react";
+import { Activity, History, Hourglass, Lock, Radar } from "lucide-react";
+import Link from "next/link";
 import { BookSections } from "@/components/book-sections";
 import { IdeaList, type IdeaListItem } from "@/components/idea-list";
 import { SignalList } from "@/components/signal-list";
 import { Stat } from "@/components/signal-bits";
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 type Book = "admin" | "gold" | "silver" | "basic" | "free";
 
@@ -36,6 +39,7 @@ export function DashboardLive({
   historyHint,
   historyEmpty,
   historyHref,
+  historyLocked = false,
   sourceCount,
 }: {
   view: Book;
@@ -44,6 +48,7 @@ export function DashboardLive({
   historyHint: string;
   historyEmpty: string;
   historyHref: string;
+  historyLocked?: boolean;
   sourceCount: number;
 }) {
   const [data, setData] = useState(snap);
@@ -95,11 +100,26 @@ export function DashboardLive({
         />
       ) : (
         <BookSections
-          historyCount={shownHistory}
+          historyCount={historyLocked ? 0 : shownHistory}
           historyHref={historyHref}
           available={<SignalList items={pending} now={now} empty="No entries are waiting to fill." />}
           active={<SignalList items={activeSignals} now={now} empty="No trades are active right now." />}
-          history={<SignalList items={data.signals?.closed ?? []} now={now} empty={historyEmpty} />}
+          history={
+            historyLocked ? (
+              <div className="flex flex-col items-center gap-2.5 rounded-xl border border-dashed border-primary/40 bg-[radial-gradient(ellipse_at_top,rgb(245_197_66/0.09),transparent_65%)] p-8 text-center">
+                <span className="flex size-12 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/60">
+                  <Lock className="size-5" />
+                </span>
+                <div className="font-heading text-base font-bold tracking-tight">History is included with Basic</div>
+                <p className="max-w-sm text-xs text-muted-foreground">Closed trades, results, stops, and targets stay locked on a free account.</p>
+                <Link href="/upgrade?tier=basic&feature=signals.basic_result" className={cn(buttonVariants(), "mt-1")}>
+                  Upgrade to Basic
+                </Link>
+              </div>
+            ) : (
+              <SignalList items={data.signals?.closed ?? []} now={now} empty={historyEmpty} />
+            )
+          }
         />
       )}
     </>

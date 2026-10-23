@@ -75,6 +75,24 @@ export default async function HistoryPage({ searchParams }: PageProps<"/history"
     </Link>
   );
 
+  if (!can(bookViewer.access, "signals.basic_result")) {
+    return (
+      <>
+        {back}
+        {header}
+        <BookSwitcher books={books} current={view} path="/history" />
+        <div className="mt-8">
+          <LockedPanel
+            feature="signals.basic_result"
+            requiredTier={lowestTierWith("signals.basic_result", config)}
+            title="History is included with Basic"
+            userId={user?.id}
+          />
+        </div>
+      </>
+    );
+  }
+
   if (view === "gold") {
     const history = byNewest((await goldBookCards(bookViewer, spot, now)).filter((card) => card.section === "history"));
     return (

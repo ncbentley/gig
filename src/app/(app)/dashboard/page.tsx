@@ -136,6 +136,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
         historyHint={historyWindowLabel(bookAccess.historyDays)}
         historyEmpty={historyEmpty}
         historyHref={historyHref}
+        historyLocked={!can(bookAccess, "signals.basic_result")}
         sourceCount={ranking.sourceCount}
       />
 
