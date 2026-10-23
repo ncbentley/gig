@@ -55,10 +55,39 @@ describe("sendGigEvent", () => {
     expect(result.duplicate).toBe(true);
   });
 
-  it("does not call the network for a bad kind or short id", async () => {
+  it("rejects missing or invalid signing keys without calling the network", async () => {
+    const event = { id: "signup:unit-test", kind: "signup" as const, occurred_at: 1700000000 };
+    const fail = (invalidKey: string | undefined) =>
+      sendGigEvent(event, {
+        key: invalidKey,
+        fetcher: () => {
+          throw new Error("Must not call network");
+        },
+      });
+
+    await expect(fail(undefined)).rejects.toMatchObject({ retryable: true, code: "missing_key" });
+    await expect(fail("short")).rejects.toMatchObject({ retryable: true, code: "missing_key" });
+    await expect(fail("A".repeat(64))).rejects.toMatchObject({ retryable: true, code: "missing_key" });
+    await expect(fail("g".repeat(64))).rejects.toMatchObject({ retryable: true, code: "missing_key" });
+    await expect(fail(undefined)).rejects.toBeInstanceOf(GigActivityDeliveryError);
+  });
+
+  it("does not call the network for an invalid kind", async () => {
     await expect(
-      sendGigEvent({ id: "x", kind: "bad", occurred_at: 1 }, { key, fetcher: () => { throw new Error("Must not call network"); } }),
-    ).rejects.toThrow(/Invalid event kind|opaque event ID/);
+      sendGigEvent(
+        { id: "signup:unit-test", kind: "bad", occurred_at: 1 },
+        { key, fetcher: () => { throw new Error("Must not call network"); } },
+      ),
+    ).rejects.toThrow(/Invalid event kind/);
+  });
+
+  it("does not call the network for a short id", async () => {
+    await expect(
+      sendGigEvent(
+        { id: "x", kind: "signup", occurred_at: 1 },
+        { key, fetcher: () => { throw new Error("Must not call network"); } },
+      ),
+    ).rejects.toThrow(/opaque event ID/);
   });
 
   it("marks 400 and 403 as not retryable", async () => {
@@ -116,6 +145,23 @@ describe("sendGigEvent", () => {
           fetcher: async () => ({
             ok: true,
             status: 200,
+            headers: new Headers({ "content-type": "text/html" }),
+            json: async () => ({}),
+          }),
+        },
+      ),
+    ).rejects.toMatchObject({ retryable: true, code: "challenge" });
+  });
+
+  it("treats a 403 HTML body as a retryable Cloudflare challenge", async () => {
+    await expect(
+      sendGigEvent(
+        { id: "signup:unit-test", kind: "signup", occurred_at: 1700000000 },
+        {
+          key,
+          fetcher: async () => ({
+            ok: false,
+            status: 403,
             headers: new Headers({ "content-type": "text/html" }),
             json: async () => ({}),
           }),

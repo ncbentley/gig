@@ -79,12 +79,12 @@ export async function sendGigEvent(
     }
     throw new GigActivityDeliveryError("Activity delivery network error", true, "http_5xx");
   }
-  if (response.status === 400) throw new GigActivityDeliveryError("Activity delivery HTTP 400", false, "http_400");
-  if (response.status === 403) throw new GigActivityDeliveryError("Activity delivery HTTP 403", false, "http_403");
-  if (!response.ok) throw new GigActivityDeliveryError(`Activity delivery HTTP ${response.status}`, true, "http_5xx");
   if (!(response.headers.get("content-type") || "").includes("application/json")) {
     throw new GigActivityDeliveryError("Unexpected response; check Cloudflare challenge", true, "challenge");
   }
+  if (response.status === 400) throw new GigActivityDeliveryError("Activity delivery HTTP 400", false, "http_400");
+  if (response.status === 403) throw new GigActivityDeliveryError("Activity delivery HTTP 403", false, "http_403");
+  if (!response.ok) throw new GigActivityDeliveryError(`Activity delivery HTTP ${response.status}`, true, "http_5xx");
   const result = (await response.json()) as { accepted?: boolean; duplicate?: boolean };
   if (result.accepted !== true) throw new GigActivityDeliveryError("Activity receipt not accepted", true, "not_accepted");
   return { accepted: true, duplicate: result.duplicate === true };
