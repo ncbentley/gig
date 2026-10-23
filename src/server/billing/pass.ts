@@ -124,6 +124,16 @@ export async function grantPassFromStripe(input: { userId: string; paymentId: st
   }
 }
 
+export async function passByPaymentId(providerPaymentId: string) {
+  const db = await getDb();
+  const [row] = await db
+    .select()
+    .from(accessPasses)
+    .where(eq(accessPasses.providerPaymentId, providerPaymentId))
+    .limit(1);
+  return row ?? null;
+}
+
 export async function refundPass(providerPaymentId: string) {
   const db = await getDb();
   await db.update(accessPasses).set({ status: "refunded" }).where(eq(accessPasses.providerPaymentId, providerPaymentId));

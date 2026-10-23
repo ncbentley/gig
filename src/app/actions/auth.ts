@@ -20,6 +20,7 @@ import {
   verifyPassword,
 } from "@/server/auth";
 import { clientIp, rateLimit } from "@/server/auth/rate-limit";
+import { createMemberAccount } from "@/server/auth/register";
 import { getDb } from "@/server/db";
 import { sessions, users } from "@/server/db/schema";
 import { referrerIdForCode } from "@/server/referrals/attribute";
@@ -52,14 +53,11 @@ export async function signupAction(_: FormState, form: FormData): Promise<FormSt
   const refRaw = (await cookies()).get("ref")?.value;
   const refCode = refRaw?.trim().toUpperCase();
   const referredByUserId = refCode ? await referrerIdForCode(refCode) : null;
-  const [user] = await db
-    .insert(users)
-    .values({
-      email: parsed.data.email,
-      passwordHash: await hashPassword(parsed.data.password),
-      referredByUserId: referredByUserId ?? undefined,
-    })
-    .returning();
+  const user = await createMemberAccount({
+    email: parsed.data.email,
+    passwordHash: await hashPassword(parsed.data.password),
+    referredByUserId,
+  });
   await sendVerificationEmail(user);
   await createSession(user.id);
   await identifyAttribution(user.id);

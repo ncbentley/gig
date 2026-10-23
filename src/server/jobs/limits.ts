@@ -61,6 +61,7 @@ export const JOB_CONCURRENCY: Record<JobType, number> = {
   CONSOLIDATE_SIGNALS: 1,
   REFRESH_BOARD: modelLanes.REFRESH_BOARD,
   RELABEL_FEED: 1,
+  GIG_ACTIVITY: 2,
 };
 
 /** How soon an idle lane looks again. Enqueue wakes the lane immediately. */
@@ -81,6 +82,7 @@ export const LANE_POLL_MS: Record<JobType, number> = {
   CONSOLIDATE_SIGNALS: 2_000,
   REFRESH_BOARD: 2_000,
   RELABEL_FEED: 2_000,
+  GIG_ACTIVITY: 2_000,
 };
 
 /**

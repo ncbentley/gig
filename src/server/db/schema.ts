@@ -168,6 +168,16 @@ export const accessPasses = pgTable(
   ],
 );
 
+export const gigActivityEvents = pgTable("gig_activity_events", {
+  id: text("id").primaryKey(),
+  kind: text("kind", { enum: ["signup", "paid_membership"] }).notNull(),
+  occurredAt: ts("occurred_at").notNull(),
+  status: text("status", { enum: ["pending", "sent"] }).notNull().default("pending"),
+  lastError: text("last_error"),
+  sentAt: ts("sent_at"),
+  createdAt: createdAt(),
+});
+
 export const referralFees = pgTable(
   "referral_fees",
   {
@@ -807,5 +817,6 @@ export type AiAnalysis = typeof aiAnalyses.$inferSelect;
 export type Subscription = typeof subscriptions.$inferSelect;
 export type ComplimentaryGrant = typeof complimentaryGrants.$inferSelect;
 export type Plan = typeof plans.$inferSelect;
+export type GigActivityEvent = typeof gigActivityEvents.$inferSelect;
 export type AffiliateLink = typeof affiliateLinks.$inferSelect;
 export type Job = typeof jobs.$inferSelect;

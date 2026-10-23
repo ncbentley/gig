@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { getDb, closeDb } from "@/server/db";
 import { runMigrations } from "@/server/db/migrate";
-import { analyticsEvents, plans, users } from "@/server/db/schema";
+import { analyticsEvents, gigActivityEvents, plans, users } from "@/server/db/schema";
 import { installAnalyticsSender } from "@/server/analytics/posthog";
 import { completeMockCheckout } from "./service";
 
@@ -50,6 +50,22 @@ describe("completeMockCheckout revenue", () => {
       properties: { revenue: 29, currency: "USD", tier: "silver", period: "monthly", provider: "mock" },
     });
     await db.delete(analyticsEvents).where(eq(analyticsEvents.userId, user.id));
+    await db.delete(users).where(eq(users.id, user.id));
+  });
+});
+
+describe("completeMockCheckout activity", () => {
+  it("does not write a gig activity row", async () => {
+    delete process.env.STRIPE_SECRET_KEY;
+    const db = await getDb();
+    await db
+      .insert(plans)
+      .values({ tier: "silver", period: "monthly", amountCents: 6600, currency: "usd", active: true })
+      .onConflictDoUpdate({ target: [plans.tier, plans.period], set: { amountCents: 6600, currency: "usd", active: true } });
+    const [user] = await db.insert(users).values({ email: `mock-act-${crypto.randomUUID()}@example.com`, passwordHash: "x" }).returning();
+    const sub = await completeMockCheckout(user.id, "silver", "monthly");
+    const rows = await db.select().from(gigActivityEvents).where(eq(gigActivityEvents.id, `paid:${sub.id}`));
+    expect(rows).toEqual([]);
     await db.delete(users).where(eq(users.id, user.id));
   });
 });
