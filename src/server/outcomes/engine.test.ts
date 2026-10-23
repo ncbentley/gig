@@ -309,4 +309,65 @@ describe("checkpoint", () => {
     expect(next.entryPrice).toBe(full.entryPrice);
     expect(next.rResult).toBe(full.rResult);
   });
+
+  it("does not fill a call from bars before it when the checkpoint has not reached the call", () => {
+    const call = Date.UTC(2026, 9, 23, 6, 35);
+    const signal: EngineSignal = {
+      direction: "SHORT",
+      entryType: "LIMIT",
+      entryMin: 4016,
+      entryMax: 4016,
+      stopLoss: 4127,
+      targets: [4011, 4006, 4000],
+      signalTime: call,
+      expiryTime: null,
+    };
+    const blank = evaluateSignal(signal, [], [], call);
+    const history: EngineBar = { t: Date.UTC(2025, 9, 8, 2, 27), o: 4015.63, h: 4016, l: 4015.62, c: 4016 };
+    const posted: EngineBar = { t: call, o: 4013.81, h: 4014.29, l: 4013.49, c: 4013.81 };
+    const out = advanceFromCheckpoint(signal, blank.checkpoint!, [history, posted], [], call + 60_000);
+    expect(blank.checkpoint!.barTime).toBe(-1);
+    expect(out.entered).toBe(false);
+    expect(out.entryTime).toBeNull();
+  });
+
+  it("fills the call minute when resuming a checkpoint that has not walked yet", () => {
+    const call = Date.UTC(2026, 9, 23, 6, 35);
+    const signal: EngineSignal = {
+      direction: "SHORT",
+      entryType: "LIMIT",
+      entryMin: 4016,
+      entryMax: 4016,
+      stopLoss: 4127,
+      targets: [4011],
+      signalTime: call,
+      expiryTime: null,
+    };
+    const blank = evaluateSignal(signal, [], [], call);
+    const touched: EngineBar = { t: call, o: 4015, h: 4016, l: 4014, c: 4016 };
+    const out = advanceFromCheckpoint(signal, blank.checkpoint!, [touched], [], call + 60_000);
+    expect(out.entered).toBe(true);
+    expect(out.entryTime).toBe(call);
+  });
+
+  it("drops an entry that was recorded before the call", () => {
+    const call = Date.UTC(2026, 9, 23, 6, 35);
+    const signal: EngineSignal = {
+      direction: "SHORT",
+      entryType: "LIMIT",
+      entryMin: 4016,
+      entryMax: 4016,
+      stopLoss: 4127,
+      targets: [4011, 4006, 4000],
+      signalTime: call,
+      expiryTime: null,
+    };
+    const history: EngineBar = { t: Date.UTC(2025, 9, 8, 2, 27), o: 4015.63, h: 4016, l: 4015.62, c: 4016 };
+    const poisoned = evaluateSignal({ ...signal, signalTime: history.t }, [history], [], history.t + 60_000);
+    const posted: EngineBar = { t: call, o: 4013.81, h: 4014.29, l: 4013.49, c: 4013.81 };
+    const out = advanceFromCheckpoint(signal, poisoned.checkpoint!, [history, posted], [], call + 60_000);
+    expect(poisoned.entered).toBe(true);
+    expect(out.entered).toBe(false);
+    expect(out.entryTime).toBeNull();
+  });
 });

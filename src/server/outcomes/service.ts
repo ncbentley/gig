@@ -163,13 +163,15 @@ export async function recalculateOutcome(signalId: string, opts: { force?: boole
     expiryTime: signal.expiryTime?.getTime() ?? null,
   };
 
-  const stored = scoredAhead ? null : checkpointOf(current);
+  const recorded = scoredAhead ? null : checkpointOf(current);
+  const stored = checkpointToResume(recorded, engineSignal.signalTime, signal.version, current?.signalVersion ?? signal.version);
   const adjustmentBeforeCheckpoint = stored ? engineAdjustments.some((adjustment) => adjustment.effectiveAt < stored.barTime) : true;
   const shortUntil = new Date(Math.min(until.getTime(), from.getTime() + 2 * 86_400_000));
   const ticks = await getEngineTicks(from, until, signal.instrument);
   let out: EngineOutcome;
   if (stored && !opts.force && !adjustmentBeforeCheckpoint) {
-    const newer = await getEngineBars(new Date(stored.barTime + 1), until, signal.instrument);
+    const firstBarStart = Math.ceil(engineSignal.signalTime / OUTCOME_RULES.barMs) * OUTCOME_RULES.barMs;
+    const newer = await getEngineBars(new Date(Math.max(stored.barTime + 1, firstBarStart)), until, signal.instrument);
     out = advanceFromCheckpoint(engineSignal, stored, newer, engineAdjustments, Math.min(until.getTime(), knownThrough), OUTCOME_RULES, ticks);
   } else {
     let cursor = shortUntil;
@@ -365,6 +367,21 @@ export function signalsToAdvance<T extends { id: string; status: string; entryMi
   bar: { h: number; l: number },
 ): string[] {
   return rows.filter((row) => barAffectsSignal(row, bar)).map((row) => row.id);
+}
+
+/** A resume may continue a walk that has already reached this call on this signal version. */
+export function checkpointToResume(
+  checkpoint: ReplayCheckpoint | null,
+  signalTime: number,
+  signalVersion: number,
+  recordedVersion: number,
+  barMs = OUTCOME_RULES.barMs,
+): ReplayCheckpoint | null {
+  if (!checkpoint) return null;
+  if (recordedVersion !== signalVersion) return null;
+  const firstBarStart = Math.ceil(signalTime / barMs) * barMs;
+  if (checkpoint.barTime < firstBarStart) return null;
+  return checkpoint;
 }
 
 function checkpointOf(current: SignalOutcome | null): ReplayCheckpoint | null {

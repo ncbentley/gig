@@ -622,8 +622,15 @@ export function advanceFromCheckpoint(
   ticks: EngineTick[] = [],
   tickPaths?: Map<number, number[]>,
 ): EngineOutcome {
+  const firstBarStart = Math.ceil(signal.signalTime / rules.barMs) * rules.barMs;
+  // A checkpoint that has not reached the call still has the blank walk, or a fill from older bars.
+  // Resume would treat stored history as this trade. Start at the call instead.
+  if (checkpoint.barTime < firstBarStart) {
+    return evaluateSignal(signal, bars, adjustments, dataThrough, rules, false, ticks, tickPaths);
+  }
   let state = restoreReplay(checkpoint, signal, adjustments, rules, ticks, tickPaths);
   for (const bar of bars) {
+    if (bar.t < firstBarStart) continue;
     if (dataThrough !== null && bar.t > dataThrough) continue;
     if (bar.t <= checkpoint.barTime || state.cp.done) continue;
     state = stepBar(state, bar, rules);
