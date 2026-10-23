@@ -83,6 +83,7 @@ Computed when a signal is read. It is not stored, and it does not use a hand-pic
 
 - **Cancelled subscriptions keep access until the end of the paid period.** Plan changes in mock mode take effect immediately.
 - **Stripe is optional.** Without `STRIPE_SECRET_KEY`, checkout goes to a local mock page that activates the plan. With Stripe configured, access is granted only by verified webhooks. An hourly reconciliation job refreshes Stripe subscriptions whose period has ended (in case a webhook was missed), and renews or expires mock ones.
+- **Aetherion activity is an outbox, not a request.** Signup and the first live monthly payment or live $10 pass write `gig_activity_events` and a `GIG_ACTIVITY` job. Mock checkout, Stripe test mode, renewals, upgrades, refunds, and complimentary grants are not sent. The HMAC key is `AETHERION_GIG_ACTIVITY_KEY` in Infisical. Telegram is unchanged.
 - **Prices live in the `plans` table.** Basic is $33 a month, Silver is $66 a month, and Gold is $99 a month. Weekly and annual rows stay for subscriptions already sold, with `active` false, and they are not renewed.
 - **Email verification is required before checkout.** This reduces throwaway accounts on paid plans.
 
