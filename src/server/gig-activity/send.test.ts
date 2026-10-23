@@ -75,7 +75,7 @@ describe("sendGigEvent", () => {
   it("does not call the network for an invalid kind", async () => {
     await expect(
       sendGigEvent(
-        { id: "signup:unit-test", kind: "bad", occurred_at: 1 } as GigActivityPayload,
+        { id: "signup:unit-test", kind: "bad", occurred_at: 1 } as unknown as GigActivityPayload,
         { key, fetcher: () => { throw new Error("Must not call network"); } },
       ),
     ).rejects.toThrow(/Invalid event kind/);
