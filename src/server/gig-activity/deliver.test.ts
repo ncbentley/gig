@@ -109,6 +109,42 @@ describe("enqueueGigActivity", () => {
     expect(job?.maxAttempts).toBe(12);
     await cleanup(id);
   });
+
+  it("does not enqueue another job after a 400, and still sweeps 5xx pending rows", async () => {
+    process.env.AETHERION_GIG_ACTIVITY_KEY = "a".repeat(64);
+    const failId = `signup:${crypto.randomUUID()}`;
+    const retryId = `signup:${crypto.randomUUID()}`;
+    const exhaustedId = `signup:${crypto.randomUUID()}`;
+    await recordGigActivityEvent({ id: failId, kind: "signup", occurredAt: new Date() });
+    await recordGigActivityEvent({ id: retryId, kind: "signup", occurredAt: new Date() });
+    await recordGigActivityEvent({ id: exhaustedId, kind: "signup", occurredAt: new Date() });
+
+    useGigActivitySender(async (event) => {
+      if (event.id === failId) throw new GigActivityDeliveryError("Activity delivery HTTP 400", false, "http_400");
+      throw new GigActivityDeliveryError("Activity delivery HTTP 500", true, "http_5xx");
+    });
+    await enqueueJob("GIG_ACTIVITY", { eventId: failId }, { dedupeKey: `gig-activity:${failId}`, maxAttempts: 12 });
+    await enqueueJob("GIG_ACTIVITY", { eventId: retryId }, { dedupeKey: `gig-activity:${retryId}`, maxAttempts: 12 });
+    await enqueueJob("GIG_ACTIVITY", { eventId: exhaustedId }, { dedupeKey: `gig-activity:${exhaustedId}`, maxAttempts: 1 });
+    await processJobs(10, ["GIG_ACTIVITY"]);
+
+    const db = await getDb();
+    const before = await db.select().from(jobs).where(eq(jobs.dedupeKey, `gig-activity:${failId}`));
+    expect(before).toHaveLength(1);
+    expect(before[0].status).toBe("failed");
+
+    const queued = await enqueuePendingGigActivity();
+    expect(queued).not.toContain(failId);
+    expect(queued).toContain(retryId);
+    expect(queued).toContain(exhaustedId);
+    expect(await db.select().from(jobs).where(eq(jobs.dedupeKey, `gig-activity:${failId}`))).toHaveLength(1);
+    const exhaustedJobs = await db.select().from(jobs).where(eq(jobs.dedupeKey, `gig-activity:${exhaustedId}`));
+    expect(exhaustedJobs.some((job) => job.status === "queued")).toBe(true);
+
+    await cleanup(failId);
+    await cleanup(retryId);
+    await cleanup(exhaustedId);
+  });
 });
 
 describe("reportLivePaidMembership", () => {

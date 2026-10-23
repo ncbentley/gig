@@ -31,6 +31,7 @@ export async function enqueuePendingGigActivity() {
   const pending = await listPendingGigActivityEvents();
   const ids: string[] = [];
   for (const row of pending) {
+    if (row.lastError === "http_400" || row.lastError === "http_403") continue;
     await enqueueGigActivity(row.id);
     ids.push(row.id);
   }
