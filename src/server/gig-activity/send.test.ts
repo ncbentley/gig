@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { GigActivityDeliveryError, sendGigEvent } from "./send";
+import { GigActivityDeliveryError, sendGigEvent, type GigActivityPayload } from "./send";
 
 const key = "a".repeat(64);
 
@@ -75,7 +75,7 @@ describe("sendGigEvent", () => {
   it("does not call the network for an invalid kind", async () => {
     await expect(
       sendGigEvent(
-        { id: "signup:unit-test", kind: "bad", occurred_at: 1 },
+        { id: "signup:unit-test", kind: "bad", occurred_at: 1 } as GigActivityPayload,
         { key, fetcher: () => { throw new Error("Must not call network"); } },
       ),
     ).rejects.toThrow(/Invalid event kind/);
