@@ -9,14 +9,15 @@ import { SignalFilters } from "@/components/signal-filters";
 import { SignalList } from "@/components/signal-list";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { fmtDate } from "@/lib/format";
+import { fmtDate, fmtDateTime } from "@/lib/format";
+import { dateRangeError } from "@/lib/signal-range";
 import { can, lowestTierWith } from "@/server/entitlements/access";
 import { historyWindowLabel } from "@/server/entitlements/config";
 import { getViewer } from "@/server/entitlements/service";
 import { sourceDisplayName } from "@/server/presenters";
 import { listSignalsForViewer, listSignalTypes, listSources, parseSignalFilters } from "@/server/signals/queries";
 
-export const metadata: Metadata = { title: "Live signals" };
+export const metadata: Metadata = { title: "Signals" };
 const PAGE_SIZE = 25;
 
 const FEATURES = [
@@ -31,13 +32,14 @@ export default async function SignalsPage({ searchParams }: PageProps<"/signals"
   if (!can(viewer.access, "signals.core")) {
     return (
       <>
-        <PageHeader title="Live signals" icon={Radio} description="Every gold signal we can read, with every level replayed against market data." />
+        <PageHeader title="Signals" icon={Radio} description="Stored calls. A recent page load does not make an old call live." />
         <LockedPanel feature="signals.core" requiredTier={lowestTierWith("signals.core", viewer.config)} title="Signals are available to members" userId={viewer.user?.id} />
       </>
     );
   }
   const basic = viewer.access.tier !== null || viewer.access.isAdmin;
   const page = Math.max(1, Number(sp.page ?? 1) || 1);
+  const rangeError = dateRangeError(typeof sp.from === "string" ? sp.from : null, typeof sp.to === "string" ? sp.to : null);
   const filters = parseSignalFilters(sp);
   const [result, signalTypes, sources] = await Promise.all([
     listSignalsForViewer(viewer, filters, { limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
@@ -55,13 +57,13 @@ export default async function SignalsPage({ searchParams }: PageProps<"/signals"
     <>
       <LiveRefresh />
       <PageHeader
-        title="Live signals"
+        title="Signals"
         icon={Radio}
         features={basic ? [...FEATURES, FILTER_FEATURE] : FEATURES}
         description={
           result.historyCutoff
-            ? `Showing signals since ${fmtDate(result.historyCutoff)}. ${historyWindowLabel(viewer.access.historyDays)}.`
-            : historyWindowLabel(null)
+            ? `Stored calls since ${fmtDate(result.historyCutoff)}. ${historyWindowLabel(viewer.access.historyDays)} Page read ${fmtDateTime(new Date())}.`
+            : `${historyWindowLabel(null)} Page read ${fmtDateTime(new Date())}.`
         }
       />
       <div className="mb-4">
@@ -75,8 +77,14 @@ export default async function SignalsPage({ searchParams }: PageProps<"/signals"
           />
         </Suspense>
       </div>
+      {rangeError && (
+        <p role="alert" className="mb-3 rounded-lg border border-loss/40 bg-loss/10 px-3 py-2 text-sm text-loss">
+          {rangeError} The list below is not filtered by that date range.
+        </p>
+      )}
       <div className="mb-2 px-1 text-xs text-muted-foreground">
-        <span className="font-mono font-semibold text-foreground tabular-nums">{result.total}</span> signal{result.total === 1 ? "" : "s"}
+        <span className="font-mono font-semibold text-foreground tabular-nums">{result.total}</span> stored call{result.total === 1 ? "" : "s"} in this view
+        <span className="mt-0.5 block">Includes open and closed rows that match the filters. This is not the closed-trade total and not the known-R total.</span>
       </div>
       <SignalList items={result.items} />
       {pages > 1 && (

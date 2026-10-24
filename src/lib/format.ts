@@ -23,13 +23,16 @@ export function fmtPct(n: number | null | undefined) {
 }
 
 export function fmtMinutes(n: number | null | undefined) {
-  if (n === null || n === undefined) return "—";
-  if (n < 60) return `${Math.round(n)}m`;
-  const h = Math.floor(n / 60);
-  const m = Math.round(n % 60);
-  if (h < 24) return m ? `${h}h ${m}m` : `${h}h`;
-  const d = Math.floor(h / 24);
-  return `${d}d ${h % 24}h`;
+  if (n === null || n === undefined || !Number.isFinite(n)) return "—";
+  const sign = n < 0 ? "-" : "";
+  const total = Math.round(Math.abs(n));
+  if (total < 60) return `${sign}${total}m`;
+  const hours = Math.floor(total / 60);
+  const minutes = total % 60;
+  if (hours < 24) return minutes ? `${sign}${hours}h ${minutes}m` : `${sign}${hours}h`;
+  const days = Math.floor(hours / 24);
+  const restHours = hours % 24;
+  return restHours ? `${sign}${days}d ${restHours}h` : `${sign}${days}d`;
 }
 
 export function fmtAge(iso: string | Date, now = Date.now()) {
@@ -39,10 +42,17 @@ export function fmtAge(iso: string | Date, now = Date.now()) {
   return fmtMinutes(ms / 60_000);
 }
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** Absolute UTC with the year, so a prior-year fill is not hidden by a day-and-month label. */
 export function fmtDateTime(iso: string | Date | null | undefined) {
   if (!iso) return "—";
   const d = typeof iso === "string" ? new Date(iso) : iso;
-  return d.toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "UTC" }) + " UTC";
+  if (Number.isNaN(d.getTime())) return "—";
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  const hour = String(d.getUTCHours()).padStart(2, "0");
+  const minute = String(d.getUTCMinutes()).padStart(2, "0");
+  return `${day} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}, ${hour}:${minute} UTC`;
 }
 
 export function fmtDate(iso: string | Date | null | undefined) {

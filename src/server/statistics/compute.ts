@@ -2,8 +2,11 @@
  * Source statistics computed only from deterministic outcomes. Pure functions.
  */
 
-export const STATS_VERSION = "stats-v1";
+export const STATS_VERSION = "stats-v2";
+/** Closed trades required before a win rate is treated as a large sample. */
 export const TOP_SOURCES_MIN_TRADES = 20;
+/** Known-R trades required before expectancy can rank a source. */
+export const EXPECTANCY_MIN_RATED = TOP_SOURCES_MIN_TRADES;
 
 export interface StatsInputRow {
   signalId: string;
@@ -20,6 +23,8 @@ export interface StatsInputRow {
   maeR: number | null;
   durationMinutes: number | null;
   targetMinutes: (number | null)[];
+  /** Fill bar opens at least 60s before publication. The original row is kept and left out of aggregates. */
+  chronologyQuarantined?: boolean;
 }
 
 export interface Bucket {
@@ -51,6 +56,11 @@ export interface SourceStatistics {
   avgLossR: number | null;
   expectancy: number | null;
   ratedTrades: number;
+  /** Closed trades whose R is null. Missing R is not counted as zero. */
+  unknownR: number;
+  /** ratedTrades / closedTrades. Null when nothing has closed. */
+  knownRCoverage: number | null;
+  chronologyQuarantined: number;
   avgMfe: number | null;
   avgMae: number | null;
   avgMfeR: number | null;
@@ -118,8 +128,14 @@ function groupBy(rows: StatsInputRow[], key: (r: StatsInputRow) => string | null
   return out;
 }
 
+export function expectancyEligible(stats: Pick<SourceStatistics, "ratedTrades" | "expectancy">) {
+  return stats.ratedTrades >= EXPECTANCY_MIN_RATED && stats.expectancy !== null;
+}
+
 export function computeSourceStatistics(input: StatsInputRow[]): SourceStatistics {
-  const rows = [...input].sort((a, b) => a.signalTime.getTime() - b.signalTime.getTime());
+  const sorted = [...input].sort((a, b) => a.signalTime.getTime() - b.signalTime.getTime());
+  const chronologyQuarantined = sorted.filter((r) => r.chronologyQuarantined).length;
+  const rows = sorted.filter((r) => !r.chronologyQuarantined);
   const entered = rows.filter((r) => r.entered);
   const closed = entered.filter((r) => CLOSED.has(r.classification));
   const overall = bucket(rows);
@@ -127,12 +143,12 @@ export function computeSourceStatistics(input: StatsInputRow[]): SourceStatistic
   const rs = rated.map((r) => r.rResult as number);
   const winRs = rated.filter((r) => r.classification === "WON").map((r) => r.rResult as number);
   const lossRs = rated.filter((r) => r.classification === "LOST").map((r) => r.rResult as number);
-  const ratedWinRate = rated.length ? winRs.length / rated.length : null;
-  const ratedLossRate = rated.length ? lossRs.length / rated.length : null;
   const avgWinR = mean(winRs);
   const avgLossR = mean(lossRs);
-  const expectancy =
-    ratedWinRate === null ? null : ratedWinRate * (avgWinR ?? 0) + (ratedLossRate ?? 0) * (avgLossR ?? 0);
+  // A class with no known R contributes nothing. It is not filled in as 0R.
+  const expectancy = rated.length
+    ? (winRs.length / rated.length) * (avgWinR ?? 0) + (lossRs.length / rated.length) * (avgLossR ?? 0)
+    : null;
 
   const mfeR = closed.map((r) => r.mfeR).filter((x): x is number => x !== null);
   const maeR = closed.map((r) => r.maeR).filter((x): x is number => x !== null);
@@ -174,6 +190,9 @@ export function computeSourceStatistics(input: StatsInputRow[]): SourceStatistic
     avgLossR: r2(avgLossR),
     expectancy: r2(expectancy),
     ratedTrades: rated.length,
+    unknownR: closed.length - rated.length,
+    knownRCoverage: closed.length ? r2(rated.length / closed.length) : null,
+    chronologyQuarantined,
     avgMfe: r2(mean(closed.map((r) => r.mfe).filter((x): x is number => x !== null))),
     avgMae: r2(mean(closed.map((r) => r.mae).filter((x): x is number => x !== null))),
     avgMfeR: r2(mean(mfeR)),

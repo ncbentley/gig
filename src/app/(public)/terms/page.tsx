@@ -7,12 +7,12 @@ export default function TermsPage() {
   return (
     <LegalPage
       title="Terms of Service"
-      updated="27 September 2026"
+      updated="24 October 2026"
       sections={[
         {
           heading: "What the service is",
           body: [
-            "Gold Intelligence Gateway aggregates trading signals published by third-party sources, records them, and measures them against historical market data. We do not create the signals and we do not place trades on your behalf.",
+            "Gold Intelligence Gateway records trading calls published by third-party sources and measures them against historical market data. Silver groups nearby calls into ideas. Gold is a shorter list: the model may keep a Silver idea or compose a zone from those ideas. A composed zone does not copy one Silver idea, and a composed row may store no link to a specific Silver idea. We do not place trades on your behalf.",
             "All content is general information made available identically to every member of a subscription tier. It is not personal financial, investment, tax or legal advice, and it does not take your circumstances into account.",
           ],
         },

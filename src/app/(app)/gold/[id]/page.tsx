@@ -61,7 +61,7 @@ export default async function GoldIdeaPage({ params }: PageProps<"/gold/[id]">) 
   if (!allowed || !can(viewer.access, "signals.core")) {
     return (
       <>
-        <PageHeader title="Gold idea" icon={Layers} description="A zone from the Gold reading of the full set." />
+        <PageHeader title="Gold idea" icon={Layers} description="A model-composed zone, or a Silver idea the book kept. A composed zone does not copy one Silver idea." />
         <LockedPanel feature="signals.core" requiredTier={lowestTierWith("signals.core", viewer.config)} title="The Gold book is a Gold feature" userId={viewer.user?.id} />
       </>
     );
@@ -74,7 +74,7 @@ export default async function GoldIdeaPage({ params }: PageProps<"/gold/[id]">) 
   if (!inHistoryWindow(calledAt, viewer.access)) {
     return (
       <>
-        <PageHeader title="Gold idea" icon={Layers} description="A zone from the Gold reading of the full set." />
+        <PageHeader title="Gold idea" icon={Layers} description="A model-composed zone, or a Silver idea the book kept. A composed zone does not copy one Silver idea." />
         <LockedPanel
           feature="sources.history.full"
           requiredTier={tierForSignalTime(calledAt, viewer.config)}
@@ -157,7 +157,7 @@ export default async function GoldIdeaPage({ params }: PageProps<"/gold/[id]">) 
             {row.direction === "LONG" ? "Long" : "Short"} · <span className="tabular-nums">{fmtEntry(row.entryMin, row.entryMax)}</span>
           </>
         }
-        description={`${PHASE_LABEL[phase]} · ${path} · ${sources === 0 ? "composed by the model" : `${sources} source${sources === 1 ? "" : "s"}`} · call ${fmtDateTime(row.createdAt)}`}
+        description={`${PHASE_LABEL[phase]} · ${path} · ${sources === 0 ? "composed by the model" : `${sources} source${sources === 1 ? "" : "s"} on the linked Silver idea`} · Gold row stored ${fmtDateTime(row.createdAt)}`}
       >
         <div className="mt-3">
           <DirectionBadge direction={row.direction} />
@@ -190,7 +190,7 @@ export default async function GoldIdeaPage({ params }: PageProps<"/gold/[id]">) 
       {items.length ? (
         <SignalList items={items} empty="None of the counting signals for this idea are still in the database." />
       ) : (
-        <p className="text-sm text-muted-foreground">The model composed this zone. It does not copy a silver idea.</p>
+        <p className="text-sm text-muted-foreground">The model composed this zone. It does not copy one Silver idea, and this row does not store a link to a specific Silver idea. It is not a third-party signal.</p>
       )}
     </>
   );

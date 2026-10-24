@@ -41,6 +41,7 @@ export function SourceSummary({ stats, name, href, userId }: { stats: PresentedS
         )}
         <span className="font-mono text-foreground/90">{plural(stats.totalSignals, "tracked signal")}</span> ·{" "}
         <span className="font-mono text-foreground/90">{stats.closedTrades}</span> closed
+        <span className="mt-1 block">Closed count excludes fills quarantined for happening before publication. It is not the signal-list total.</span>
       </div>
       <div className="mt-3">
         {stats.closedTrades === 0 ? (
@@ -49,10 +50,16 @@ export function SourceSummary({ stats, name, href, userId }: { stats: PresentedS
           <GatedView gated={stats.summary} title="Source statistics" userId={userId} compact>
             {(s) => (
               <div className="grid grid-cols-2 gap-2">
-                <Stat tone="gold" label="Win rate" value={fmtPct(s.winRate)} n={s.wins + s.losses + s.breakevens} />
-                <Stat tone={rTone(s.avgR)} label="Average R" value={<RValue value={s.avgR} />} n={s.ratedTrades} />
-                <Stat tone={rTone(s.expectancy)} label="Expectancy" value={<RValue value={s.expectancy} />} n={s.ratedTrades} />
-                <Stat label="Avg duration" value={fmtMinutes(s.avgDurationMinutes)} />
+                <Stat tone="gold" label="Win rate" value={fmtPct(s.winRate)} n={s.wins + s.losses + s.breakevens} hint="closed trades" />
+                <Stat tone={rTone(s.avgR)} label="Average R" value={<RValue value={s.avgR} />} n={s.ratedTrades} hint="known R" />
+                <Stat
+                  tone={rTone(s.expectancy)}
+                  label="Expectancy"
+                  value={s.ratedTrades >= 20 && s.expectancy !== null ? <RValue value={s.expectancy} /> : "Unranked"}
+                  n={s.ratedTrades}
+                  hint={s.ratedTrades >= 20 ? `known R · ${s.unknownR} unknown R` : `need 20 known R · ${s.unknownR} unknown R`}
+                />
+                <Stat label="Avg duration" value={fmtMinutes(s.avgDurationMinutes)} n={s.wins + s.losses + s.breakevens} hint="closed trades" />
               </div>
             )}
           </GatedView>

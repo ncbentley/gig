@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { billingMode } from "@/server/billing/config";
 import { getCurrentUser } from "@/server/auth";
 import { PASS_PRICE_CENTS, purchasedPass } from "@/server/billing/pass";
+import { referralRulesBesidePurchase } from "@/server/referrals/money";
 
 export const metadata: Metadata = { title: "Pricing" };
 
@@ -30,7 +31,7 @@ export default async function PricingPage({ searchParams }: PageProps<"/pricing"
       <PageHeader
         icon={Package}
         title="Choose your package"
-        description="Basic is every signal for 7 days. Silver and Gold are tighter readings of the same calls. The 10-day pass is Gold access, one purchase per account."
+        description="Basic is every recorded third-party signal for 7 days. Silver groups nearby calls into ideas. Gold is a shorter list: a kept Silver idea, or a zone the model composed. The 10-day pass is Gold access, one purchase per account."
         features={FEATURES}
       />
 
@@ -42,7 +43,7 @@ export default async function PricingPage({ searchParams }: PageProps<"/pricing"
         <div>
           <h2 className="font-heading text-xl font-extrabold tracking-tight">10-day full-access pass</h2>
           <p className="mt-1 max-w-xl text-sm leading-relaxed text-foreground/80">
-            {fmtMoney(PASS_PRICE_CENTS, "usd")} once for 10 days of Gold access, including full history. One per account. It does not renew.
+            {fmtMoney(PASS_PRICE_CENTS, "usd")} once for 10 days of Gold access, including full history. One per account. It does not renew. {referralRulesBesidePurchase(PASS_PRICE_CENTS)}
           </p>
         </div>
         {passUsed ? (

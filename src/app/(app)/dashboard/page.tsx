@@ -9,7 +9,7 @@ import { DashboardLive } from "@/components/dashboard-live";
 import { LockedPanel } from "@/components/locked";
 import { PageHeader, SectionTitle } from "@/components/page-header";
 import { TopSources } from "@/components/top-sources";
-import { fmtAge, fmtPrice } from "@/lib/format";
+import { fmtAge, fmtDateTime, fmtPrice } from "@/lib/format";
 import { can, lowestTierWith } from "@/server/entitlements/access";
 import { historyWindowLabel, TIER_LABEL } from "@/server/entitlements/config";
 import { accessForDashboardView, applyHistoryWindow, dashboardsFor, readDashboardSnapshot, resolveDashboardView, type DashboardView } from "@/server/feed/snapshot";
@@ -17,18 +17,20 @@ import { countHistoryIdeasForAccess } from "@/server/ideas/service";
 import { getViewer } from "@/server/entitlements/service";
 import { countClosedSignalsForAccess } from "@/server/signals/queries";
 import { nowMs } from "@/lib/clock";
+import { isGoldMarketOpen } from "@/server/market-data/provider";
 
 export const metadata: Metadata = { title: "Dashboard" };
 
 const FEATURES = [
-  { icon: Radio, label: "Live signals from every channel we can read" },
+  { icon: Radio, label: "Stored calls from channels we can read" },
   { icon: ChartCandlestick, label: "Replayed against XAU/USD minute data" },
   { icon: Trophy, label: "Source track records" },
 ];
 
 const BOOK_DESCRIPTION: Partial<Record<DashboardView, string>> = {
-  silver: "The Silver book. Consolidated ideas from nearby calls, wider than Gold.",
-  basic: "The Basic book. Individual signals, with no grouping.",
+  gold: "The Gold book. A shorter list than Silver: a kept Silver idea, or a zone the model composed. A composed zone does not copy one Silver idea.",
+  silver: "The Silver book. Nearby calls grouped into ideas. Wider than Gold.",
+  basic: "The Basic book. Individual third-party signals, with no grouping.",
 };
 
 function ViewAll({ href }: { href: string }) {
@@ -52,15 +54,14 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const stored = await readDashboardSnapshot(view);
   const snap = stored ? applyHistoryWindow(stored, bookAccess, new Date(now)) : null;
   const lastBar = snap?.spot;
+  const sessionOpen = isGoldMarketOpen(new Date(now));
 
   const header = (
     <PageHeader
       title="Dashboard"
       icon={LayoutDashboard}
       description={
-        view !== books[0] && BOOK_DESCRIPTION[view]
-          ? BOOK_DESCRIPTION[view]
-          : "Available, active, and a short history. Each step up is a tighter reading of the same calls."
+        BOOK_DESCRIPTION[view] ?? "Available, active, and a short history of stored calls."
       }
       features={FEATURES}
       actions={
@@ -71,9 +72,12 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
             </span>
             <div className="text-right">
               <div className="text-[11px] text-muted-foreground">
-                <span className="font-semibold text-foreground/90">XAU/USD</span> last bar {fmtAge(lastBar.timestamp, now)} ago
+                <span className="font-semibold text-foreground/90">XAU/USD</span> stored bar {fmtDateTime(lastBar.timestamp)}
               </div>
               <div className="gold-text font-mono text-2xl font-bold tabular-nums tracking-tight">{fmtPrice(lastBar.close)}</div>
+              <div className="max-w-[16rem] text-[11px] leading-snug text-muted-foreground">
+                {fmtAge(lastBar.timestamp, now)} after that bar. {sessionOpen ? "Gold session open" : "Gold session closed"} by the Sunday 22:00–Friday 21:00 UTC window. This is the stored bar, not a live quote.
+              </div>
             </div>
           </div>
         )

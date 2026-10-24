@@ -14,7 +14,10 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { marketDataNotice, tradeChartRange } from "@/lib/chart-window";
+import { assessChronology } from "@/lib/chronology";
+import { EVIDENCE } from "@/lib/evidence";
 import { fmtAge, fmtDateTime, fmtEntry, fmtMinutes, fmtPct, fmtPrice } from "@/lib/format";
+import { insufficientEvidence } from "@/server/ai/commentary";
 import { tradeMarkers } from "@/lib/trade-markers";
 import { cn } from "@/lib/utils";
 import { trackEvent } from "@/server/analytics";
@@ -94,7 +97,7 @@ export default async function SignalDetailPage({ params }: PageProps<"/signals/[
       href="/signals"
       className="mb-3 inline-flex items-center gap-1.5 rounded-md text-sm font-medium text-muted-foreground outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-ring"
     >
-      <ArrowLeft className="size-4" /> Live signals
+      <ArrowLeft className="size-4" /> Signals
     </Link>
   );
   if (res.kind !== "ok") {
@@ -114,6 +117,9 @@ export default async function SignalDetailPage({ params }: PageProps<"/signals/[
   void trackEvent("signal_viewed", viewer.user?.id ?? null, { signalId: d.id, source: d.source.slug });
 
   const signalMs = Date.parse(d.signalTime);
+  const originMs = d.originPublishedAt ? Date.parse(d.originPublishedAt) : null;
+  const publishedMs = originMs ?? signalMs;
+  const clocksDiffer = originMs !== null && Math.abs(originMs - signalMs) >= 1000;
   const range = tradeChartRange(signalMs, d.closedAt ? Date.parse(d.closedAt) : null, nowMs());
   const bars = await getEngineBars(range.from, range.to);
   const points = downsample(bars);
@@ -128,9 +134,30 @@ export default async function SignalDetailPage({ params }: PageProps<"/signals/[
   const timeline = (!excursion.locked && excursion.data ? excursion.data.timeline : []) as { t: number; type: string; note?: string }[];
   const markers = tradeMarkers({ calledAt: signalMs, timeline });
   const progress = d.outcome.progress;
-  const filledAt = !progress.locked && progress.data?.entryTime ? Date.parse(progress.data.entryTime) : null;
+  const storedFill = !progress.locked && progress.data?.entryTime ? Date.parse(progress.data.entryTime) : null;
+  const chronology = assessChronology(publishedMs, storedFill);
+  const filledAt = chronology.quarantined ? null : storedFill;
+  const stopSupplied = plan ? plan.stopLoss !== null : true;
+  const targetsSupplied = plan ? plan.targets.length > 0 : true;
+  const evidence = plan
+    ? [
+        !stopSupplied ? EVIDENCE.noStop : null,
+        !targetsSupplied ? EVIDENCE.noTargets : null,
+        chronology.kind === "quarantined" ? EVIDENCE.entryBeforePublication : null,
+        chronology.kind === "minute_bar_rounding" ? EVIDENCE.minuteBarRounding : null,
+        progress.data?.ambiguous ? EVIDENCE.ambiguousMinute : null,
+        EVIDENCE.costUnknown,
+      ].filter((label): label is string => label !== null)
+    : [];
+  const commentary = insufficientEvidence({
+    closedTrades: d.sourceStats?.closedTrades ?? 20,
+    ratedTrades: !d.sourceStats || d.sourceStats.summary.locked ? 20 : d.sourceStats.summary.data.ratedTrades,
+    stopSupplied,
+    targetsSupplied,
+    chronologyKind: chronology.kind,
+  });
   const uid = viewer.user?.id;
-  const session = sessionFor(new Date(d.signalTime));
+  const session = sessionFor(new Date(publishedMs));
   const open = d.status === "PENDING" || d.status === "ACTIVE" || d.status === "PARTIAL";
 
   return (
@@ -152,7 +179,10 @@ export default async function SignalDetailPage({ params }: PageProps<"/signals/[
           <Link href={`/sources/${d.source.id}`} className="rounded text-sm font-semibold text-primary outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring">
             {d.source.name}
           </Link>
-          <span className="text-sm text-foreground/80">{`Published ${fmtDateTime(d.signalTime)} (${fmtAge(d.signalTime)} ago) · ${session} session`}</span>
+          <span className="text-sm text-foreground/80">{`Published ${fmtDateTime(new Date(publishedMs))} (${fmtAge(publishedMs)} ago) · ${session} session`}</span>
+          {clocksDiffer && (
+            <span className="text-sm text-muted-foreground">{`Replay clock ${fmtDateTime(d.signalTime)}. Chronology uses the origin publication time.`}</span>
+          )}
         </div>
       </PageHeader>
 
@@ -166,7 +196,11 @@ export default async function SignalDetailPage({ params }: PageProps<"/signals/[
                 label="Stop loss"
                 value={
                   plan ? (
-                    <span className={cn("font-mono text-base", plan.stopLoss !== null && "text-loss")}>{fmtPrice(plan.stopLoss)}</span>
+                    plan.stopLoss === null ? (
+                      <span className="text-sm text-muted-foreground">{EVIDENCE.noStop}</span>
+                    ) : (
+                      <span className="font-mono text-base text-loss">{fmtPrice(plan.stopLoss)}</span>
+                    )
                   ) : (
                     <span className="text-sm text-muted-foreground">Locked</span>
                   )
@@ -182,14 +216,14 @@ export default async function SignalDetailPage({ params }: PageProps<"/signals/[
                         <span key={t.index} className={cn(t.status === "HIT" && "text-win", t.status === "AMBIGUOUS" && "text-amber-300")}>
                           TP{t.index} {fmtPrice(t.price)}
                         </span>
-                      )) : "—"}
+                      )) : EVIDENCE.noTargets}
                     </span>
                   ) : (
                     <span className="text-sm text-muted-foreground">Locked</span>
                   )
                 }
               />
-              <Stat label="Parser confidence" value={fmtPct(d.parserConfidence)} hint={`version ${d.version}${d.sourceConfidenceText ? ` · source says “${d.sourceConfidenceText}”` : ""}`} />
+              <Stat label="Parser confidence" value={fmtPct(d.parserConfidence)} hint={`Parser score, not a win probability. version ${d.version}${d.sourceConfidenceText ? ` · source says “${d.sourceConfidenceText}”` : ""}`} />
             </div>
             <div className="mt-4 rounded-xl bg-[#050c1c]/80 p-2 ring-1 ring-glow/25 shadow-[inset_0_0_30px_-12px_rgb(47_123_255/0.4)]">
               <PriceChart points={points} levels={levels} markers={markers} notice={marketDataNotice({ bars, calledAt: signalMs, filledAt })} />
@@ -221,17 +255,40 @@ export default async function SignalDetailPage({ params }: PageProps<"/signals/[
           </Section>
 
           <Section icon={Target} title="Outcome" description={`Deterministic replay against 1-minute XAU/USD bars · ${d.outcome.calcVersion ?? "not yet calculated"}${d.outcome.kind === "override" ? " · manual override" : ""}`}>
+            {evidence.length > 0 && (
+              <ul className="mb-3 flex flex-wrap gap-1.5" aria-label="Evidence limits">
+                {evidence.map((label) => (
+                  <li key={label} className="rounded-md border border-amber-400/40 bg-amber-400/10 px-2 py-1 text-xs text-amber-200">
+                    {label}
+                  </li>
+                ))}
+              </ul>
+            )}
             {!progress.locked && progress.data?.ambiguous && (
               <div className="mb-3 flex gap-2 rounded-lg border border-amber-400/30 bg-amber-400/5 p-3 text-xs text-amber-200">
                 <Info className="size-4 shrink-0" />
-                The stop and a target were both touched inside one 1-minute candle. The order cannot be determined from minute data, so no result is assigned.
+                Ambiguous minute. The stop and a target were both touched inside one 1-minute candle, so no result is assigned.
               </div>
+            )}
+            {chronology.kind === "quarantined" && storedFill !== null && (
+              <p className="mb-3 text-sm text-amber-200">
+                Entry before publication. Stored fill {fmtDateTime(new Date(storedFill))} is kept and is not counted. Published {fmtDateTime(new Date(publishedMs))}.
+              </p>
+            )}
+            {chronology.kind === "minute_bar_rounding" && storedFill !== null && (
+              <p className="mb-3 text-sm text-muted-foreground">
+                Minute-bar rounding. The fill bar opens less than 60 seconds before publication ({fmtDateTime(new Date(storedFill))}).
+              </p>
             )}
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {progress.locked ? (
                 <Stat label="Entered" value={<span className="text-sm text-muted-foreground">Locked</span>} />
               ) : (
-                <Stat label="Entered" value={progress.data?.entered ? "Yes" : "No"} hint={progress.data?.entryTime ? fmtDateTime(progress.data.entryTime) : undefined} />
+                <Stat
+                  label="Entered"
+                  value={chronology.quarantined ? "Quarantined" : progress.data?.entered ? "Yes" : "No"}
+                  hint={storedFill !== null ? `Observed fill ${fmtDateTime(new Date(storedFill))}` : undefined}
+                />
               )}
               <Stat
                 tone="gold"
@@ -249,8 +306,16 @@ export default async function SignalDetailPage({ params }: PageProps<"/signals/[
                   <Stat
                     tone={rTone(r?.rResult)}
                     label="Result"
-                    value={r ? <RValue value={r.rResult} /> : "Open"}
-                    hint={r ? `${r.classification.toLowerCase()} · ${r.exitReason?.toLowerCase() ?? ""}` : "shown after close"}
+                    value={chronology.quarantined || (plan && plan.stopLoss === null) ? EVIDENCE.rUnavailable : r ? <RValue value={r.rResult} /> : "Open"}
+                    hint={
+                      chronology.quarantined
+                        ? "Stored win or loss is not audited R"
+                        : plan && plan.stopLoss === null
+                          ? "No stop supplied"
+                          : r
+                            ? `${r.classification.toLowerCase()} · ${r.exitReason?.toLowerCase() ?? ""}`
+                            : "shown after close"
+                    }
                   />
                 )}
               </GatedView>
@@ -382,7 +447,8 @@ export default async function SignalDetailPage({ params }: PageProps<"/signals/[
             </div>
           </Section>
 
-          <Section icon={BrainCircuit} title="AI analysis" description="Generated from the stored facts above. AI output never changes raw signals or deterministic results.">
+          <Section icon={BrainCircuit} title="AI analysis" description="Generated from the stored facts above. AI output never changes raw signals or deterministic results. A result after the call is not a reason for the call.">
+            {commentary && <p className="mb-3 text-sm text-amber-200">{commentary}</p>}
             {d.ai.meta && (
               <div className="mb-3 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
                 <Bot className="size-3.5 text-[#8db6ff]" /> {d.ai.meta.model} · prompt {d.ai.meta.promptVersion} · {fmtDateTime(d.ai.meta.createdAt)}
@@ -395,7 +461,7 @@ export default async function SignalDetailPage({ params }: PageProps<"/signals/[
                     <div className={BOX}>
                       <div className="flex items-center gap-2 text-xs font-semibold text-[#8db6ff]"><Sparkles className="size-3.5 text-primary" /> Setup</div>
                       <div className="gold-text mt-1 font-heading text-lg font-bold tracking-tight">{c.label}</div>
-                      <div className="text-xs text-muted-foreground">confidence {fmtPct(c.confidence)}</div>
+                      <div className="text-xs text-muted-foreground">Label weight {fmtPct(c.confidence)}. Not a win probability.</div>
                       <p className="mt-2 text-sm leading-relaxed">{c.rationale}</p>
                     </div>
                   ) : (
@@ -447,15 +513,22 @@ export default async function SignalDetailPage({ params }: PageProps<"/signals/[
                 <div className="text-xs text-muted-foreground">
                   <span className="font-mono text-foreground/90">{d.sourceStats.totalSignals}</span> tracked signals ·{" "}
                   <span className="font-mono text-foreground/90">{d.sourceStats.closedTrades}</span> closed
+                  <span className="mt-1 block">Win rate uses closed trades. Expectancy uses known R only. Fills before publication are excluded.</span>
                 </div>
                 <div className="mt-3">
                   <GatedView gated={d.sourceStats.summary} title="Source statistics" userId={uid} compact>
                     {(s) => (
                       <div className="grid grid-cols-2 gap-2">
-                        <Stat tone="gold" label="Win rate" value={fmtPct(s.winRate)} n={s.wins + s.losses + s.breakevens} />
-                        <Stat tone={rTone(s.avgR)} label="Average R" value={<RValue value={s.avgR} />} n={s.ratedTrades} />
-                        <Stat tone={rTone(s.expectancy)} label="Expectancy" value={<RValue value={s.expectancy} />} n={s.ratedTrades} />
-                        <Stat label="Avg duration" value={fmtMinutes(s.avgDurationMinutes)} />
+                        <Stat tone="gold" label="Win rate" value={fmtPct(s.winRate)} n={s.wins + s.losses + s.breakevens} hint="closed trades" />
+                        <Stat tone={rTone(s.avgR)} label="Average R" value={<RValue value={s.avgR} />} n={s.ratedTrades} hint="known R" />
+                        <Stat
+                          tone={rTone(s.expectancy)}
+                          label="Expectancy"
+                          value={s.ratedTrades >= 20 && s.expectancy !== null ? <RValue value={s.expectancy} /> : "Unranked"}
+                          n={s.ratedTrades}
+                          hint={s.unknownR > 0 ? `${s.unknownR} closed without R` : "known R"}
+                        />
+                        <Stat label="Avg duration" value={fmtMinutes(s.avgDurationMinutes)} n={s.wins + s.losses + s.breakevens} hint="closed trades" />
                       </div>
                     )}
                   </GatedView>

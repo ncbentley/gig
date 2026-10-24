@@ -1,5 +1,6 @@
 import { apiError, json, withViewer } from "@/server/api";
 import { can, lowestTierWith } from "@/server/entitlements/access";
+import { dateRangeError } from "@/lib/signal-range";
 import { listSignalsForViewer, parseSignalFilters } from "@/server/signals/queries";
 
 export async function GET(req: Request) {
@@ -18,6 +19,7 @@ export async function GET(req: Request) {
       offset,
       historyCutoff: result.historyCutoff,
       ignoredFilters: result.ignoredFilters,
+      rangeError: dateRangeError(params.get("from"), params.get("to")),
     });
   });
 }

@@ -1,4 +1,5 @@
 import { directionFromFacts } from "@/server/direction/score";
+import { insufficientEvidence } from "../commentary";
 import type { AiProvider, AiRequest, SignalSetupOutput, SourcePatternsOutput } from "../types";
 import type { SignalFacts, SourcePatternFacts } from "../facts";
 
@@ -36,20 +37,24 @@ function signalSetup(f: SignalFacts, version: string): SignalSetupOutput {
   const context = `Over the prior hour price moved ${(f.marketContext.change60m ?? 0).toFixed(2)} and over four hours ${(f.marketContext.change240m ?? 0).toFixed(2)}.`;
   const history =
     f.sourceHistory.closedTrades > 0
-      ? `${f.signal.sourceName} has ${f.sourceHistory.closedTrades} closed trades on record (win rate ${pct(f.sourceHistory.winRate)}, average ${r(f.sourceHistory.avgR)}).`
+      ? `${f.signal.sourceName} has ${f.sourceHistory.closedTrades} closed trades (win rate ${pct(f.sourceHistory.winRate)} on that closed count) and ${f.sourceHistory.ratedTrades} known-R trades (average ${r(f.sourceHistory.avgR)}).`
       : `${f.signal.sourceName} has no closed trades on record yet.`;
   const similar =
     f.similar.n > 0
-      ? `${f.similar.n} earlier trades matched on ${f.similar.dimensions.join(", ")}; ${pct(f.similar.winRate)} won with an average of ${r(f.similar.avgR)}.`
+      ? `${f.similar.n} earlier trades matched on ${f.similar.dimensions.join(", ")}; ${pct(f.similar.winRate)} of those closed trades won, with average R ${r(f.similar.avgR)} on the trades that have an R.`
       : "No earlier closed trades matched this setup.";
-  const outcome = f.outcome
-    ? ` The trade has closed as ${f.outcome.classification.toLowerCase()} (${r(f.outcome.rResult)}).`
-    : "";
+  const caveat = insufficientEvidence(f.evidence);
+  const sample = `Known R ${f.evidence.ratedTrades} of ${f.evidence.closedTrades} closed trades.`;
 
-  const summary =
+  const summary = [
+    caveat,
+    sample,
     version === "signal-setup-v2"
-      ? `${geometry} ${context} ${similar}${outcome}`
-      : `${f.signal.sourceName} published a ${dirWord} ${f.signal.entryType.toLowerCase()} entry at ${entry} during the ${f.signal.session} session. ${context} ${history}${outcome}`;
+      ? `${geometry} ${context} ${similar}`
+      : `${f.signal.sourceName} published a ${dirWord} ${f.signal.entryType.toLowerCase()} entry at ${entry} during the ${f.signal.session} session. ${context} ${history}`,
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   const tags = [
     c.label.toLowerCase().replace(/\s+/g, "-"),
@@ -80,7 +85,11 @@ function signalSetup(f: SignalFacts, version: string): SignalSetupOutput {
   }
 
   return {
-    setupClassification: { label: c.label, confidence: c.confidence, rationale: c.why },
+    setupClassification: {
+      label: c.label,
+      confidence: caveat ? Math.min(c.confidence, 0.4) : c.confidence,
+      rationale: caveat ? `${c.why} This weight is not a win probability. ${caveat}` : `${c.why} This weight is not a win probability.`,
+    },
     summary,
     patternTags: tags,
     marketContextTags: ctx,
@@ -108,12 +117,12 @@ function sourcePatterns(f: SourcePatternFacts): SourcePatternsOutput {
   const patterns: SourcePatternsOutput["patterns"] = [];
   const sessions = Object.entries(f.bySession).filter(([, b]) => b.n > 0 && b.avgR !== null);
   sessions.sort((a, b) => (b[1].avgR ?? 0) - (a[1].avgR ?? 0));
-  if (sessions.length >= 2) {
+  if (sessions.length >= 2 && f.ratedTrades >= 20) {
     const [bestName, best] = sessions[0];
     const [worstName, worst] = sessions[sessions.length - 1];
     patterns.push({
-      title: `Strongest in the ${bestName} session`,
-      detail: `${bestName} trades averaged ${r(best.avgR)} versus ${r(worst.avgR)} in the ${worstName} session.`,
+      title: `Highest average R in the ${bestName} session`,
+      detail: `${bestName} trades averaged ${r(best.avgR)} on ${best.n} closed trades versus ${r(worst.avgR)} in the ${worstName} session on ${worst.n}.`,
       sampleSize: best.n + worst.n,
     });
   }
@@ -143,10 +152,15 @@ function sourcePatterns(f: SourcePatternFacts): SourcePatternsOutput {
     });
   }
   const caveats = [];
+  if (f.ratedTrades < 20) caveats.push(`Insufficient evidence for expectancy: known R is ${f.ratedTrades} of ${f.closedTrades} closed trades.`);
+  if (f.unknownR > 0) caveats.push(`${f.unknownR} closed trades have no R. Those are not counted as 0R.`);
   if (f.closedTrades < 30) caveats.push(`Only ${f.closedTrades} closed trades are on record; patterns may not persist.`);
   caveats.push("Historical results do not guarantee future performance.");
   return {
-    headline: `${f.sourceName}: ${f.closedTrades} closed trades, ${pct(f.winRate)} win rate, expectancy ${r(f.expectancy)} per trade.`,
+    headline:
+      f.ratedTrades < 20
+        ? `${f.sourceName}: insufficient evidence for expectancy. ${f.closedTrades} closed trades, known R ${f.ratedTrades}, win rate ${pct(f.winRate)} on the closed-trade count.`
+        : `${f.sourceName}: ${f.closedTrades} closed trades, ${pct(f.winRate)} win rate on that closed count, expectancy ${r(f.expectancy)} on ${f.ratedTrades} known-R trades.`,
     patterns,
     caveats,
     factsReferenced: ["closedTrades", "winRate", "expectancy", "bySession", "byDirection", "recent30", "avgMfeR", "avgMaeR"],

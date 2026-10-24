@@ -7,6 +7,8 @@ import { getDb } from "@/server/db";
 import { marketBars, signals, signalTargets, sources } from "@/server/db/schema";
 import { getCurrentOutcome } from "@/server/outcomes/service";
 import { getSimilarTradesForSignal } from "@/server/similar/service";
+import { assessChronology } from "@/lib/chronology";
+import type { CommentaryEvidence } from "@/server/ai/commentary";
 import { sessionFor, type Bucket, type SourceStatistics } from "@/server/statistics/compute";
 import { getSourceStats } from "@/server/statistics/service";
 
@@ -38,12 +40,16 @@ export interface SignalFacts {
   };
   sourceHistory: {
     closedTrades: number;
+    ratedTrades: number;
+    unknownR: number;
     winRate: number | null;
     avgR: number | null;
+    expectancy: number | null;
     sameSession: Bucket | null;
     sameDirection: Bucket | null;
   };
   similar: { n: number; winRate: number | null; avgR: number | null; dimensions: string[] };
+  evidence: CommentaryEvidence;
   outcome: null | {
     classification: string;
     rResult: number | null;
@@ -86,6 +92,7 @@ export async function buildSignalFacts(signalId: string): Promise<SignalFacts> {
   const outcome = await getCurrentOutcome(signalId);
   const closed = outcome && ["WON", "LOST", "BREAKEVEN"].includes(outcome.classification);
   const session = sessionFor(signal.signalTime);
+  const chronology = assessChronology(signal.signalTime.getTime(), outcome?.entryTime?.getTime() ?? null);
 
   return {
     signal: {
@@ -112,10 +119,20 @@ export async function buildSignalFacts(signalId: string): Promise<SignalFacts> {
     },
     sourceHistory: {
       closedTrades: stats.closedTrades,
+      ratedTrades: stats.ratedTrades,
+      unknownR: stats.unknownR,
       winRate: stats.winRate,
       avgR: stats.avgR,
+      expectancy: stats.expectancy,
       sameSession: stats.bySession[session] ?? null,
       sameDirection: stats.byDirection[signal.direction] ?? null,
+    },
+    evidence: {
+      closedTrades: stats.closedTrades,
+      ratedTrades: stats.ratedTrades,
+      stopSupplied: signal.stopLoss !== null,
+      targetsSupplied: targets.length > 0,
+      chronologyKind: chronology.kind,
     },
     similar: {
       n: similar?.summary.n ?? 0,
@@ -139,6 +156,8 @@ export async function buildSignalFacts(signalId: string): Promise<SignalFacts> {
 export interface SourcePatternFacts {
   sourceName: string;
   closedTrades: number;
+  ratedTrades: number;
+  unknownR: number;
   winRate: number | null;
   avgR: number | null;
   expectancy: number | null;
@@ -156,6 +175,8 @@ export async function buildSourcePatternFacts(sourceId: string): Promise<SourceP
   return {
     sourceName: "this source",
     closedTrades: s.closedTrades,
+    ratedTrades: s.ratedTrades,
+    unknownR: s.unknownR,
     winRate: s.winRate,
     avgR: s.avgR,
     expectancy: s.expectancy,
