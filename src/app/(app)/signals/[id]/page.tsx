@@ -139,15 +139,16 @@ export default async function SignalDetailPage({ params }: PageProps<"/signals/[
   const filledAt = chronology.quarantined ? null : storedFill;
   const stopSupplied = plan ? plan.stopLoss !== null : true;
   const targetsSupplied = plan ? plan.targets.length > 0 : true;
+  const ambiguousMinute = !progress.locked && progress.data?.ambiguous === true;
   const evidence = plan
     ? [
         !stopSupplied ? EVIDENCE.noStop : null,
         !targetsSupplied ? EVIDENCE.noTargets : null,
         chronology.kind === "quarantined" ? EVIDENCE.entryBeforePublication : null,
         chronology.kind === "minute_bar_rounding" ? EVIDENCE.minuteBarRounding : null,
-        progress.data?.ambiguous ? EVIDENCE.ambiguousMinute : null,
+        ambiguousMinute ? EVIDENCE.ambiguousMinute : null,
         EVIDENCE.costUnknown,
-      ].filter((label): label is string => label !== null)
+      ].filter((label) => label !== null)
     : [];
   const commentary = insufficientEvidence({
     closedTrades: d.sourceStats?.closedTrades ?? 20,
@@ -179,7 +180,7 @@ export default async function SignalDetailPage({ params }: PageProps<"/signals/[
           <Link href={`/sources/${d.source.id}`} className="rounded text-sm font-semibold text-primary outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring">
             {d.source.name}
           </Link>
-          <span className="text-sm text-foreground/80">{`Published ${fmtDateTime(new Date(publishedMs))} (${fmtAge(publishedMs)} ago) · ${session} session`}</span>
+          <span className="text-sm text-foreground/80">{`Published ${fmtDateTime(new Date(publishedMs))} (${fmtAge(new Date(publishedMs))} ago) · ${session} session`}</span>
           {clocksDiffer && (
             <span className="text-sm text-muted-foreground">{`Replay clock ${fmtDateTime(d.signalTime)}. Chronology uses the origin publication time.`}</span>
           )}

@@ -41,7 +41,8 @@ describe("source statistic denominators", () => {
   it("leaves a quarantined win out of the closed and known-R counts", () => {
     const stats = computeSourceStatistics([
       row({ signalId: "bad", rResult: 2, chronologyQuarantined: true }),
-      row({ signalId: "ok", rResult: 1, classification: "LOST" }),
+      // Outcome engine stores loss R already signed. The LOST label must not flip it again.
+      row({ signalId: "ok", rResult: -1, classification: "LOST" }),
     ]);
     expect(stats.chronologyQuarantined).toBe(1);
     expect(stats.closedTrades).toBe(1);
@@ -49,6 +50,15 @@ describe("source statistic denominators", () => {
     expect(stats.losses).toBe(1);
     expect(stats.ratedTrades).toBe(1);
     expect(stats.expectancy).toBe(-1);
+  });
+
+  it("keeps a stored positive R on a LOST row instead of flipping the sign from the label", () => {
+    const stats = computeSourceStatistics([
+      row({ signalId: "mismatch", rResult: 1, classification: "LOST" }),
+    ]);
+    expect(stats.losses).toBe(1);
+    expect(stats.expectancy).toBe(1);
+    expect(stats.avgR).toBe(1);
   });
 
   it("does not turn a sample with no known R into 0R expectancy", () => {
