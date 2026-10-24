@@ -11,6 +11,9 @@ import {
   signals,
   sources,
 } from "@/server/db/schema";
+import { assessChronology } from "@/lib/chronology";
+import { evidenceLabels } from "@/lib/evidence";
+import { describeTargetLadders } from "@/server/ideas/targets";
 import { OUTCOME_RULES } from "@/server/outcomes/engine";
 
 export const RESEARCH_FEED_SCHEMA = "research-feed-v1";
@@ -22,7 +25,10 @@ export const ENTRY_TRIGGER_RULE = `A market quote more than ${OUTCOME_RULES.maxQ
 export const RESEARCH_FEED_UNAVAILABLE = [
   "No separate market feed id is stored. instrument is the symbol.",
   "Spread and commission assumptions are not stored.",
-  "Gold compositions have no source message, so text and publishedAt stay null.",
+  "Gold compositions have no source message, so text and publishedAt stay null. recordedAt and compositionAt are the row insert time, not a publication time.",
+  "Silver publishedAt is the newest constituent signal time. recordedAt is when the idea row was stored. Neither is an idea-level outcome time. Silver rows have no signal outcome, so evaluationAt stays null.",
+  "A basic fill at least 60 seconds before publication is quarantined. entryTime stays the original bar time. normalizedEntryTime is null, and that row is not executable R evidence. A fill less than 60 seconds early is minute-bar rounding.",
+  "spreadCostAssumption null means the cost assumption is unknown, not that cost is zero.",
   "Rows already stored when this log was created appear once, at their then-current revision. Later edits are additional events.",
   "Target hit status is the status at read time.",
   "QA channels are omitted.",
@@ -240,7 +246,10 @@ async function mapRows(rows: LogRow[]) {
       const ideaId = str(body.idea_id);
       if (ideaId) ideaIds.add(ideaId);
     }
-    if (row.entity === "idea") ideaIds.add(row.entityId);
+    if (row.entity === "idea") {
+      ideaIds.add(row.entityId);
+      for (const id of strList(body.signal_ids)) signalIds.push(id);
+    }
   }
 
   const sourceRows = sourceIds.size
@@ -252,17 +261,18 @@ async function mapRows(rows: LogRow[]) {
   const sourceById = new Map(sourceRows.map((row) => [row.id, row]));
   const eventRows = eventIds.size ? await db.select().from(rawEvents).where(inArray(rawEvents.id, [...eventIds])) : [];
   const eventById = new Map(eventRows.map((row) => [row.id, row]));
-  const targetRows = signalIds.length
-    ? await db.select().from(signalTargets).where(inArray(signalTargets.signalId, signalIds)).orderBy(asc(signalTargets.targetIndex))
+  const allSignalIds = [...new Set(signalIds)];
+  const targetRows = allSignalIds.length
+    ? await db.select().from(signalTargets).where(inArray(signalTargets.signalId, allSignalIds)).orderBy(asc(signalTargets.targetIndex))
     : [];
-  const outcomeRows = signalIds.length
+  const outcomeRows = allSignalIds.length
     ? await db
         .select()
         .from(signalOutcomes)
-        .where(inArray(signalOutcomes.signalId, signalIds))
+        .where(inArray(signalOutcomes.signalId, allSignalIds))
     : [];
-  const editRows = signalIds.length
-    ? await db.select().from(signalAdjustments).where(inArray(signalAdjustments.signalId, signalIds))
+  const editRows = allSignalIds.length
+    ? await db.select().from(signalAdjustments).where(inArray(signalAdjustments.signalId, allSignalIds))
     : [];
   const ideaRows = ideaIds.size ? await db.select().from(consolidatedIdeas).where(inArray(consolidatedIdeas.id, [...ideaIds])) : [];
   const ideaById = new Map(ideaRows.map((row) => [row.id, row]));
@@ -279,7 +289,7 @@ async function mapRows(rows: LogRow[]) {
       return tombstone(row, tier, sourceType);
     }
     if (row.entity === "signal") return mapSignal(row, signalById, sourceById, eventById, targetRows, outcomeRows, editRows, providers);
-    if (row.entity === "idea") return mapIdea(row);
+    if (row.entity === "idea") return mapIdea(row, targetRows);
     return mapGold(row, ideaById);
   });
 }
@@ -339,26 +349,46 @@ function mapSignal(
   item.editedAt = facts.version > 1 ? iso(latestEdit) : null;
   item.recordedAt = origin ? iso(origin.receivedAt) : null;
   item.text = origin?.rawText ?? null;
+  const publishedMs = origin ? origin.publishedAt.getTime() : facts.signalTime.getTime();
+  const chronology = assessChronology(publishedMs, outcome?.entryTime?.getTime() ?? null);
   item.outcome = outcome
     ? {
         methodologyVersion: outcome.calcVersion,
         marketDataSource: providers.get(facts.instrument) ?? null,
         resolution: "1m",
         spreadCostAssumption: null,
+        costAssumption: "Cost assumption unknown",
         entryTriggerRule: ENTRY_TRIGGER_RULE,
         sameBarStopTargetAmbiguous: outcome.ambiguous,
         classification: outcome.classification,
         entered: outcome.entered,
         entryTime: iso(outcome.entryTime),
+        normalizedEntryTime: chronology.normalizedEntryTimeMs === null ? null : new Date(chronology.normalizedEntryTimeMs).toISOString(),
+        chronology: {
+          kind: chronology.kind,
+          deltaMs: chronology.deltaMs,
+          quarantined: chronology.quarantined,
+          publicationClock: origin ? "origin_published_at" : "signal_time",
+        },
         entryPrice: outcome.entryPrice,
         exitTime: iso(outcome.exitTime),
         exitReason: outcome.exitReason,
+        storedRResult: outcome.rResult,
+        normalizedRResult: chronology.quarantined ? null : outcome.rResult,
+        evidence: evidenceLabels({
+          stopSupplied: facts.stopLoss !== null,
+          targetsSupplied: item.targets.length > 0,
+          rKnown: !chronology.quarantined && outcome.rResult !== null,
+          ambiguous: outcome.ambiguous,
+          chronologyKind: chronology.kind,
+          costKnown: false,
+        }),
       }
     : null;
   return item;
 }
 
-function mapIdea(row: LogRow) {
+function mapIdea(row: LogRow, targetRows: (typeof signalTargets.$inferSelect)[]) {
   const body = snap(row);
   const phase = str(body.phase) ?? "available";
   const created = iso(body.created_at);
@@ -367,24 +397,46 @@ function mapIdea(row: LogRow) {
   item.revision = String(row.seq);
   item.status = phase;
   item.lifecycle = phase === "history" ? "closed" : phase === "playing-out" ? "open" : "pending";
-  item.direction = str(body.direction);
+  const direction = str(body.direction);
+  item.direction = direction;
   item.instrument = "XAUUSD";
   item.entry = { min: num(body.entry_min), max: num(body.entry_max) };
   item.stopLoss = num(body.stop_loss);
-  item.targets = (Array.isArray(body.targets) ? body.targets : []).map((price, index) => ({
-    index: index + 1,
-    price: num(price),
-    status: null,
+  const replayPrices = (Array.isArray(body.targets) ? body.targets : []).map((price) => num(price)).filter((price): price is number => price !== null);
+  item.targets = replayPrices.map((price, index) => ({ index: index + 1, price, status: null }));
+  const signalIds = strList(body.signal_ids);
+  const contributed = signalIds.map((signalId) => ({
+    signalId,
+    prices: targetRows.filter((target) => target.signalId === signalId).map((target) => target.price).filter((price): price is number => price !== null),
   }));
+  const ladders = describeTargetLadders({
+    direction: direction === "SHORT" ? "SHORT" : "LONG",
+    replayTargets: replayPrices,
+    contributed,
+  });
   item.publishedAt = iso(body.newest_signal_at);
   item.recordedAt = created;
   item.editedAt = created && updated && updated !== created ? updated : null;
   item.lineage = {
-    signalIds: strList(body.signal_ids),
+    signalIds,
     ideaIds: [],
     replacedSignalIds: strList(body.replaced_signal_ids),
   };
-  return item;
+  return {
+    ...item,
+    constituentPublicationAt: iso(body.newest_signal_at),
+    compositionAt: created,
+    evaluationAt: null,
+    publicationProvenance: "publishedAt and constituentPublicationAt are the newest constituent signal time. recordedAt is when this idea row was stored, not a publication and not an evaluation.",
+    targetLadders: ladders,
+    evidence: evidenceLabels({
+      stopSupplied: item.stopLoss !== null,
+      targetsSupplied: replayPrices.length > 0,
+      rKnown: false,
+      ambiguous: false,
+      costKnown: false,
+    }),
+  };
 }
 
 function mapGold(row: LogRow, ideaById: Map<string, typeof consolidatedIdeas.$inferSelect>) {
@@ -406,11 +458,27 @@ function mapGold(row: LogRow, ideaById: Map<string, typeof consolidatedIdeas.$in
     price: num(price),
     status: null,
   }));
-  item.recordedAt = iso(body.created_at);
+  const compositionAt = iso(body.created_at);
+  item.recordedAt = compositionAt;
   item.lineage = {
     signalIds: idea?.signalIds ?? [],
     ideaIds: ideaId ? [ideaId] : [],
     replacedSignalIds: idea?.replacedSignalIds ?? [],
   };
-  return item;
+  return {
+    ...item,
+    compositionAt,
+    constituentPublicationAt: idea ? iso(idea.newestSignalAt) : null,
+    evaluationAt: null,
+    publicationProvenance: ideaId
+      ? "This Gold row is linked to a Silver idea. publishedAt stays null: the row has no source message. recordedAt and compositionAt are the Gold row insert time, not that idea's publication."
+      : "The model composed this zone. It is not a copy of one Silver idea, and this row stores no Silver idea id. publishedAt stays null. recordedAt and compositionAt are the insert time, not a publication.",
+    evidence: evidenceLabels({
+      stopSupplied: item.stopLoss !== null,
+      targetsSupplied: item.targets.length > 0,
+      rKnown: false,
+      ambiguous: false,
+      costKnown: false,
+    }),
+  };
 }

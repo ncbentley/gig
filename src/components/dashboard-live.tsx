@@ -88,7 +88,7 @@ export function DashboardLive({
         <Stat label="Available" value={availableCount} hint="can still be filled" icon={Hourglass} />
         <Stat label="Active" value={activeCount} hint="entered, not closed" icon={Activity} tone="gold" />
         <Stat label="History" value={shownHistory} hint={historyHint} icon={History} />
-        <Stat label="Tracked sources" value={sourceCount} icon={Radar} />
+        <Stat label="Tracked sources" value={sourceCount} hint="ranking snapshot, not the directory" icon={Radar} />
       </div>
       {book ? (
         <BookSections

@@ -1,14 +1,16 @@
 import { and, eq, inArray } from "drizzle-orm";
+import { assessChronology } from "@/lib/chronology";
 import { getDb } from "@/server/db";
-import { signalOutcomes, signals, signalTargets, sourceStats } from "@/server/db/schema";
-import { computeSourceStatistics, STATS_VERSION, TOP_SOURCES_MIN_TRADES, type SourceStatistics, type StatsInputRow } from "./compute";
+import { rawEvents, signalOutcomes, signals, signalTargets, sourceStats } from "@/server/db/schema";
+import { computeSourceStatistics, expectancyEligible, STATS_VERSION, type SourceStatistics, type StatsInputRow } from "./compute";
 
 export async function loadStatsRows(sourceId: string): Promise<StatsInputRow[]> {
   const db = await getDb();
   const rows = await db
-    .select({ signal: signals, outcome: signalOutcomes })
+    .select({ signal: signals, outcome: signalOutcomes, publishedAt: rawEvents.publishedAt })
     .from(signals)
     .leftJoin(signalOutcomes, and(eq(signalOutcomes.signalId, signals.id), eq(signalOutcomes.isCurrent, true)))
+    .leftJoin(rawEvents, eq(rawEvents.id, signals.originEventId))
     .where(eq(signals.sourceId, sourceId));
   const targets = await db
     .select({ signalId: signalTargets.signalId, targetIndex: signalTargets.targetIndex })
@@ -20,10 +22,13 @@ export async function loadStatsRows(sourceId: string): Promise<StatsInputRow[]> 
 
   return rows
     .filter((r) => r.signal.status !== "INVALID")
-    .map(({ signal, outcome }) => {
+    .map(({ signal, outcome, publishedAt }) => {
       const detailTargets = ((outcome?.detailJson as { targets?: { minutesFromEntry: number | null }[] })?.targets ?? []).map(
         (t) => t.minutesFromEntry,
       );
+      // Origin publishedAt is the publication clock. signalTime is the ingest copy of that instant, used only when the origin row is missing.
+      const publishedMs = publishedAt?.getTime() ?? signal.signalTime.getTime();
+      const chronology = assessChronology(publishedMs, outcome?.entryTime?.getTime() ?? null);
       return {
         signalId: signal.id,
         direction: signal.direction,
@@ -32,6 +37,7 @@ export async function loadStatsRows(sourceId: string): Promise<StatsInputRow[]> 
         signalTime: signal.signalTime,
         classification: outcome?.classification ?? "PENDING",
         entered: outcome?.entered ?? false,
+        chronologyQuarantined: Boolean(outcome?.entered && chronology.quarantined),
         rResult: outcome?.rResult ?? null,
         mfe: outcome?.mfe ?? null,
         mae: outcome?.mae ?? null,
@@ -71,17 +77,39 @@ export async function getSourceStatsMany(sourceIds: string[]): Promise<Map<strin
   return out;
 }
 
-/** Ranks by expectancy; sources below the closed-trade minimum are left out so small samples can't top the list. */
-export async function getTopSources(sourceIds: string[], limit = 5) {
+/** Every tracked source, with an expectancy rank only when known R meets the minimum. */
+export async function rankAllSources(sourceIds: string[]) {
   const all = await getSourceStatsMany(sourceIds);
   const stats = [...all].map(([sourceId, s]) => ({ sourceId, stats: s }));
-  const eligible = stats.filter((s) => s.stats.closedTrades >= TOP_SOURCES_MIN_TRADES && s.stats.expectancy !== null);
-  eligible.sort((a, b) => b.stats.expectancy! - a.stats.expectancy! || b.stats.closedTrades - a.stats.closedTrades);
+  const eligible = stats.filter((s) => expectancyEligible(s.stats));
+  eligible.sort(
+    (a, b) =>
+      b.stats.expectancy! - a.stats.expectancy! ||
+      b.stats.ratedTrades - a.stats.ratedTrades ||
+      b.stats.closedTrades - a.stats.closedTrades ||
+      (a.sourceId < b.sourceId ? -1 : a.sourceId > b.sourceId ? 1 : 0),
+  );
+  const rank = new Map(eligible.map((s, index) => [s.sourceId, index + 1]));
   return {
-    top: eligible.slice(0, limit),
+    rows: stats.map((s) => ({ ...s, expectancyRank: rank.get(s.sourceId) ?? null })),
     eligibleCount: eligible.length,
     sourceCount: stats.length,
     totalClosed: stats.reduce((n, s) => n + s.stats.closedTrades, 0),
+  };
+}
+
+/** Ranks by expectancy among sources with enough known-R trades. A single known R cannot place a source. */
+export async function getTopSources(sourceIds: string[], limit = 5) {
+  const ranked = await rankAllSources(sourceIds);
+  const top = ranked.rows
+    .filter((row) => row.expectancyRank !== null)
+    .sort((a, b) => a.expectancyRank! - b.expectancyRank!)
+    .slice(0, limit);
+  return {
+    top,
+    eligibleCount: ranked.eligibleCount,
+    sourceCount: ranked.sourceCount,
+    totalClosed: ranked.totalClosed,
   };
 }
 
