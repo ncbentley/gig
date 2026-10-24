@@ -18,6 +18,7 @@ import { appliedComplimentary } from "@/server/entitlements/complimentary";
 import { TIER_LABEL } from "@/server/entitlements/config";
 import { getViewer } from "@/server/entitlements/service";
 import { referralCodeForUserId } from "@/server/referrals/attribute";
+import { referralRulesBesidePurchase } from "@/server/referrals/money";
 import { ReferralCodeField } from "@/components/referral-code-field";
 
 export const metadata: Metadata = { title: "Billing" };
@@ -186,7 +187,7 @@ export default async function BillingPage({ searchParams }: PageProps<"/billing"
               ? `Gold access is active on this pass until ${fmtDate(pass.endsAt)}.`
               : ownedPass
                 ? "This account already used its 10-day pass. A monthly plan is how access continues."
-                : `One-time ${fmtMoney(PASS_PRICE_CENTS, "usd")} for 10 days of Gold access. One per account. Does not renew.`}
+                : `One-time ${fmtMoney(PASS_PRICE_CENTS, "usd")} for 10 days of Gold access. One per account. Does not renew. ${referralRulesBesidePurchase(PASS_PRICE_CENTS)}`}
           </CardDescription>
         </CardHeader>
         {!pass && !ownedPass && (

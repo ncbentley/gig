@@ -9,9 +9,7 @@ import {
   referralPayoutAccounts,
   referralWithdrawals,
 } from "@/server/db/schema";
-import { allocateFifo, requestableBalance } from "./money";
-
-const MIN_WITHDRAWAL_CENTS = 2500;
+import { allocateFifo, MIN_WITHDRAWAL_CENTS, requestableBalance } from "./money";
 
 function isUniqueViolation(error: unknown) {
   return (

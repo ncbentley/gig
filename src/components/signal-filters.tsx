@@ -2,11 +2,12 @@
 
 import { ArrowDownRight, ArrowUpRight, Lock, Search, X } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { dateRangeError } from "@/lib/signal-range";
 import { cn } from "@/lib/utils";
 
 type Option = { value: string; label: string };
@@ -97,6 +98,13 @@ export function SignalFilters({
   const pathname = usePathname();
   const params = useSearchParams();
   const [pending, start] = useTransition();
+  const [fromDraft, setFromDraft] = useState(params.get("from") ?? "");
+  const [toDraft, setToDraft] = useState(params.get("to") ?? "");
+
+  useEffect(() => {
+    setFromDraft(params.get("from") ?? "");
+    setToDraft(params.get("to") ?? "");
+  }, [params]);
 
   const set = (name: string, value: string) => {
     const next = new URLSearchParams(params.toString());
@@ -117,21 +125,36 @@ export function SignalFilters({
       </Tooltip>
     );
 
-  const dateField = (name: "from" | "to", label: string) => (
-    <Input
-      type="date"
-      aria-label={label}
-      className={cn(FIELD, "w-38 [color-scheme:dark]", params.get(name) && FIELD_ACTIVE)}
-      defaultValue={params.get(name) ?? ""}
-      onChange={(e) => set(name, e.target.value)}
-    />
-  );
+  const draftError = dateRangeError(fromDraft, toDraft);
+  const appliedError = dateRangeError(params.get("from"), params.get("to"));
+  const applyDates = () => {
+    const next = new URLSearchParams(params.toString());
+    if (fromDraft) next.set("from", fromDraft);
+    else next.delete("from");
+    if (toDraft) next.set("to", toDraft);
+    else next.delete("to");
+    next.delete("page");
+    start(() => router.replace(`${pathname}?${next.toString()}`, { scroll: false }));
+  };
+  const chips: { key: string; label: string }[] = [];
+  const direction = params.get("direction");
+  if (direction) chips.push({ key: "direction", label: direction === "LONG" ? "Long" : direction === "SHORT" ? "Short" : direction });
+  const source = params.get("source");
+  if (source) chips.push({ key: "source", label: sources.find((item) => item.value === source)?.label ?? "Source" });
+  const status = params.get("status");
+  if (status) chips.push({ key: "status", label: status });
+  if (params.get("from")) chips.push({ key: "from", label: `From ${params.get("from")}` });
+  if (params.get("to")) chips.push({ key: "to", label: `To ${params.get("to")}` });
+  if (params.get("q")) chips.push({ key: "q", label: `Text “${params.get("q")}”` });
+  if (params.get("entryType")) chips.push({ key: "entryType", label: params.get("entryType") ?? "" });
+  if (params.get("signalType")) chips.push({ key: "signalType", label: params.get("signalType") ?? "" });
 
   return (
     <div
+      aria-busy={pending}
       className={cn(
-        "panel flex flex-wrap items-center gap-2 rounded-xl p-2.5 shadow-[0_0_22px_-12px_rgb(47_123_255/0.7)] ring-1 ring-glow/25 transition-opacity",
-        pending && "opacity-70",
+        "panel flex flex-wrap items-center gap-2 rounded-xl p-2.5 shadow-[0_0_22px_-12px_rgb(47_123_255/0.7)] ring-1 ring-glow/25",
+        pending && "opacity-80",
       )}
     >
       {basic && <DirectionChips value={params.get("direction") ?? ""} onChange={set} />}
@@ -160,8 +183,27 @@ export function SignalFilters({
           ]}
         />
       )}
-      {basic && dateField("from", "From date")}
-      {basic && dateField("to", "To date")}
+      {basic && (
+        <>
+          <input
+            type="date"
+            aria-label="From date"
+            value={fromDraft}
+            onChange={(event) => setFromDraft(event.target.value)}
+            className={cn(FIELD, "w-40 px-2 [color-scheme:dark]", fromDraft && FIELD_ACTIVE)}
+          />
+          <input
+            type="date"
+            aria-label="To date"
+            value={toDraft}
+            onChange={(event) => setToDraft(event.target.value)}
+            className={cn(FIELD, "w-40 px-2 [color-scheme:dark]", toDraft && FIELD_ACTIVE)}
+          />
+          <Button type="button" size="sm" variant="outline" onClick={applyDates}>
+            Apply dates
+          </Button>
+        </>
+      )}
       {lockedHint(
         <FilterSelect
           name="entryType"
@@ -205,6 +247,33 @@ export function SignalFilters({
         <Button variant="ghost" size="sm" className="ml-auto text-muted-foreground hover:text-foreground" onClick={() => start(() => router.replace(pathname, { scroll: false }))}>
           <X /> Clear
         </Button>
+      )}
+      {(draftError || appliedError) && (
+        <p role="alert" className="basis-full text-sm text-loss">
+          {draftError ?? appliedError}
+        </p>
+      )}
+      {pending && (
+        <p role="status" className="basis-full text-sm text-primary">
+          Updating the list. The signals below are the previous results, not a new unfiltered result.
+        </p>
+      )}
+      {chips.length > 0 && (
+        <ul className="basis-full flex flex-wrap gap-1.5" aria-label="Applied filters">
+          {chips.map((chip) => (
+            <li key={chip.key}>
+              <button
+                type="button"
+                onClick={() => set(chip.key, "")}
+                className="inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
+              >
+                {chip.label}
+                <X className="size-3" />
+                <span className="sr-only">Remove {chip.label}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

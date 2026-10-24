@@ -13,7 +13,7 @@ import { getViewer } from "@/server/entitlements/service";
 const TAGLINE: Record<Tier, string> = {
   basic: "Every valid signal, one week back",
   silver: "Nearby calls averaged into one idea",
-  gold: "The news read, above a shorter list of ideas",
+  gold: "A shorter list: a kept Silver idea, or a zone the model composed",
 };
 
 export function parsePlanParams(sp: Record<string, string | string[] | undefined>, fallback?: { tier?: string; period?: BillingPeriod }) {

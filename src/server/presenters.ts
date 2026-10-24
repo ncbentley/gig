@@ -84,6 +84,8 @@ export type SignalListItem = ReturnType<typeof presentSignalListItem>;
 
 export interface SignalDetailInput extends SignalBundle {
   rawText: string | null;
+  /** Origin event clock. Omitted by older callers; the page then uses signalTime. */
+  originPublishedAt?: Date | null;
   updates: { publishedAt: Date; eventType: string | null; rawText: string }[];
   sourceStats: SourceStatistics | null;
   similar: SimilarTradesResult | null;
@@ -117,6 +119,7 @@ export function presentSignalDetail(input: SignalDetailInput, access: Access, co
   return {
     ...base,
     version: input.signal.version,
+    originPublishedAt: iso(input.originPublishedAt),
     parserConfidence: input.signal.parserConfidence,
     sourceConfidenceText: input.signal.sourceConfidenceText,
     // Original posts often carry the channel name, so only an admin session receives them.
@@ -233,6 +236,9 @@ export function presentSourceStats(s: SourceStatistics, access: Access, config: 
       avgLossR: s.avgLossR,
       expectancy: s.expectancy,
       ratedTrades: s.ratedTrades,
+      unknownR: s.unknownR,
+      knownRCoverage: s.knownRCoverage,
+      chronologyQuarantined: s.chronologyQuarantined,
       avgDurationMinutes: s.avgDurationMinutes,
     })),
     recent: gate(access, "sources.stats.recent", config, () => ({ recent10: s.recent10, recent30: s.recent30 })),

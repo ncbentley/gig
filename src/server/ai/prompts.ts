@@ -8,6 +8,11 @@ Rules:
 - Never recommend taking or skipping a trade. Describe; do not advise.
 - Never compute P&L; deterministic metrics are supplied when they exist.
 - If a fact is missing, say it is unavailable.
+- Constrain every performance sentence to the metric's own sample size, the missing fields, the window, and this source.
+- If evidence.chronologyKind is quarantined, or known R is below 20, or the signal has no stop or no targets, say "Insufficient evidence" and do not call the record strong or high.
+- setupClassification.confidence is an uncalibrated label weight. It is not a probability that the trade wins.
+- Do not use a result that happened after the signal to justify the call that was published.
+- Do not treat a win label as a monetary R. Missing R is not zero. A null cost assumption is unknown, not zero.
 - List every fact key you relied on in "factsReferenced".
 Respond with JSON matching the provided schema.`;
 

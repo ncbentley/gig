@@ -7,7 +7,7 @@ import { IdeaList } from "@/components/idea-list";
 import { SignalList } from "@/components/signal-list";
 import { TopSources } from "@/components/top-sources";
 import { buttonVariants } from "@/components/ui/button";
-import { fmtMoney } from "@/lib/format";
+import { fmtDateTime, fmtMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { getCurrentUser } from "@/server/auth";
 import { PASS_PRICE_CENTS, purchasedPass } from "@/server/billing/pass";
@@ -16,7 +16,7 @@ import { historyWindowLabel, TIER_LABEL } from "@/server/entitlements/config";
 import { getTierConfig } from "@/server/entitlements/service";
 import { readDashboardSnapshot } from "@/server/feed/snapshot";
 import { listPublicSampleSignals, listSources } from "@/server/signals/queries";
-import { REFERRAL_FEE_CENTS } from "@/server/referrals/money";
+import { REFERRAL_FEE_CENTS, referralRulesBesidePurchase } from "@/server/referrals/money";
 import { getTopSources } from "@/server/statistics/service";
 import type { Tier } from "@/server/db/schema";
 
@@ -27,7 +27,7 @@ const PAID: Tier[] = ["basic", "silver", "gold"];
 const PLAN_BLURB: Record<Tier, string> = {
   basic: "Your entry point into gold-signal intelligence.",
   silver: "More history. A consolidated view of nearby calls.",
-  gold: "A more refined set of ideas with full historical access.",
+  gold: "A shorter list than Silver: a kept Silver idea, or a zone the model composed. Full history.",
 };
 
 const QUESTIONS = [
@@ -125,7 +125,7 @@ function planLines(tier: Tier, historyDays: number | null): string[] {
   const history = historyWindowLabel(historyDays);
   if (tier === "basic") return ["Access to eligible signals", history];
   if (tier === "silver") return ["Nearby calls averaged into one idea", history];
-  return ["A shorter list selected from Silver ideas", "News context alongside selected ideas", history];
+  return ["A shorter list than Silver", "A kept Silver idea, or a zone the model composed", "News context alongside those ideas", history];
 }
 
 export default async function LandingPage() {
@@ -188,7 +188,7 @@ export default async function LandingPage() {
           <div className="mt-8">
             <PassButton used={passUsed} size="lg" label="Get the 10-day pass" />
             <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">
-              {fmtMoney(PASS_PRICE_CENTS, "usd")} once for Gold access. One per account. It does not renew.
+              {fmtMoney(PASS_PRICE_CENTS, "usd")} once for Gold access. One per account. It does not renew. {referralRulesBesidePurchase(PASS_PRICE_CENTS)}
             </p>
           </div>
           <dl className="mt-12 flex flex-wrap gap-x-12 gap-y-6">
@@ -201,7 +201,10 @@ export default async function LandingPage() {
             {totalClosed > 0 && (
               <div>
                 <dd className="font-heading text-3xl font-extrabold tabular-nums tracking-tight">{totalClosed.toLocaleString()}</dd>
-                <dt className="mt-1 text-sm text-muted-foreground">Measured trades</dt>
+                <dt className="mt-1 text-sm text-muted-foreground">Closed trades</dt>
+                <p className="mt-1 max-w-[18rem] text-xs leading-relaxed text-muted-foreground">
+                  As of {fmtDateTime(new Date())}. Sum of per-source closed trades. A fill before publication is excluded. This is not the stored-call count and not the known-R count.
+                </p>
               </div>
             )}
             <div>
@@ -216,14 +219,17 @@ export default async function LandingPage() {
         <div className="mx-auto max-w-6xl px-4 py-20">
           <h2 className="max-w-[18ch] font-heading text-3xl font-extrabold tracking-[-0.03em] md:text-4xl">See how sources compare.</h2>
           <p className="mt-4 max-w-xl text-pretty leading-relaxed text-muted-foreground">
-            Ranked sources, using historical performance and the same evaluation rules. Names on this page are nicknames.
+            Expectancy rank requires at least 20 known-R trades. Win rate uses closed trades. Names on this page are nicknames. As of {fmtDateTime(new Date())}.
           </p>
           <div className="mt-10">
             <TopSources
-              rows={top.map(({ sourceId, stats }) => ({
+              rows={top.map(({ sourceId, stats, expectancyRank }) => ({
                 sourceId,
                 name: sources.find((source) => source.id === sourceId)?.nickname ?? "Source",
                 closedTrades: stats.closedTrades,
+                ratedTrades: stats.ratedTrades,
+                unknownR: stats.unknownR,
+                expectancyRank,
                 metrics: stats,
               }))}
               eligibleCount={eligibleCount}
@@ -333,9 +339,11 @@ export default async function LandingPage() {
 
           <div className="mt-16">
             <h3 className="gold-text font-heading text-2xl font-extrabold tracking-tight">Gold</h3>
-            <p className="mt-2 max-w-xl text-sm leading-relaxed text-foreground/80">Basic and Silver, plus a shorter list kept only when the book agrees.</p>
+            <p className="mt-2 max-w-xl text-sm leading-relaxed text-foreground/80">
+              Gold is a shorter list than Silver. The model may keep a Silver idea or compose a zone from those ideas. A composed zone does not copy one Silver idea.
+            </p>
             <div className="mt-5">
-              <IdeaList items={goldIdeas} empty="A composed idea will show here once Gold keeps one." />
+              <IdeaList items={goldIdeas} empty="A kept Silver idea or a model-composed zone will show here once Gold stores one." />
             </div>
           </div>
         </div>
@@ -357,7 +365,7 @@ export default async function LandingPage() {
               <span className="font-sans text-sm font-normal text-muted-foreground"> once</span>
             </p>
             <div>
-              <p className="text-sm text-foreground/75">Gold access for 10 days. One per account. Does not renew.</p>
+              <p className="text-sm text-foreground/75">Gold access for 10 days. One per account. Does not renew. {referralRulesBesidePurchase(PASS_PRICE_CENTS)}</p>
               <ul className="mt-3 space-y-1 text-sm text-foreground/85">
                 <li>The full Gold book</li>
                 <li>Full historical access</li>
@@ -434,7 +442,9 @@ export default async function LandingPage() {
             <li>
               <p className="text-sm font-semibold text-primary">1</p>
               <h3 className="mt-2 font-heading text-lg font-extrabold tracking-tight">Get your referral link</h3>
-              <p className="mt-2 text-sm leading-relaxed text-foreground/80">Every member gets a link to share with trading friends, Telegram communities, and other gold traders.</p>
+              <p className="mt-2 text-sm leading-relaxed text-foreground/80">
+                A referral code is created with the first monthly payment. The 10-day pass does not create one. Share that code with trading friends, Telegram communities, and other gold traders.
+              </p>
             </li>
             <li>
               <p className="text-sm font-semibold text-primary">2</p>
@@ -510,7 +520,9 @@ export default async function LandingPage() {
         <p className="mt-6 max-w-xl font-heading text-xl font-extrabold tracking-tight">Gold Intelligence Gateway puts the evidence in front of you.</p>
         <div className="mt-8">
           <PassButton used={passUsed} size="lg" label="Get the 10-day pass" />
-          <p className="mt-3 text-sm text-muted-foreground">{fmtMoney(PASS_PRICE_CENTS, "usd")} once for Gold access. One per account. It does not renew.</p>
+          <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">
+            {fmtMoney(PASS_PRICE_CENTS, "usd")} once for Gold access. One per account. It does not renew. {referralRulesBesidePurchase(PASS_PRICE_CENTS)}
+          </p>
         </div>
         <div className="mt-16">
           <AffiliateStrip placement="landing" />

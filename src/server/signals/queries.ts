@@ -16,7 +16,9 @@ import { presentSignalDetail, presentSignalListItem, presentSourceStats, sourceD
 import { OUTCOME_RULES } from "@/server/outcomes/engine";
 import { getSimilarTradesForSignal } from "@/server/similar/service";
 import { loadMemberConsensus } from "@/server/consensus/service";
-import { getSourceStats, getTopSources } from "@/server/statistics/service";
+import { getSourceStats, getTopSources, rankAllSources } from "@/server/statistics/service";
+import { EXPECTANCY_MIN_RATED } from "@/server/statistics/compute";
+import { dateRangeError } from "@/lib/signal-range";
 
 export interface SignalFilters {
   sourceId?: string;
@@ -43,12 +45,15 @@ export function parseSignalFilters(params: URLSearchParams | Record<string, stri
   const status = get("status");
   const direction = get("direction");
   const entryType = get("entryType");
+  const fromRaw = get("from");
+  const toRaw = get("to");
+  const rangeError = dateRangeError(fromRaw, toRaw);
   return {
     sourceId: get("source"),
     status: status && ([...SIGNAL_STATUSES, "OPEN", "CLOSED"] as string[]).includes(status) ? (status as SignalFilters["status"]) : undefined,
     direction: direction === "LONG" || direction === "SHORT" ? direction : undefined,
-    from: date(get("from")),
-    to: date(get("to")),
+    from: rangeError ? undefined : date(fromRaw),
+    to: rangeError ? undefined : date(toRaw),
     entryType: entryType === "MARKET" || entryType === "LIMIT" || entryType === "ZONE" ? entryType : undefined,
     signalType: get("signalType"),
     classification: get("classification"),
@@ -292,6 +297,7 @@ export async function getSignalDetailForViewer(signalId: string, viewer: Viewer)
     {
       ...bundle,
       rawText: origin?.rawText ?? null,
+      originPublishedAt: origin?.publishedAt ?? null,
       updates: (updates.rows ?? []).map((u) => ({ publishedAt: new Date(u.published_at), eventType: u.event_type, rawText: u.raw_text })),
       sourceStats: stats,
       similar,
@@ -341,22 +347,87 @@ export async function listSources(opts: { includeInactive?: boolean; includeQa?:
     .orderBy(asc(sources.name));
 }
 
+function presentRankedSource(
+  source: Awaited<ReturnType<typeof listSources>>[number],
+  stats: Awaited<ReturnType<typeof getSourceStats>>,
+  viewer: Viewer,
+  expectancyRank: number | null,
+) {
+  const summary = presentSourceStats(stats, viewer.access, viewer.config).summary;
+  return {
+    sourceId: source.id,
+    name: sourceDisplayName(source, viewer.access),
+    closedTrades: stats.closedTrades,
+    ratedTrades: stats.ratedTrades,
+    unknownR: stats.unknownR,
+    expectancyRank,
+    metrics: summary.locked
+      ? null
+      : {
+          winRate: summary.data.winRate,
+          expectancy: summary.data.expectancy,
+          ratedTrades: summary.data.ratedTrades,
+        },
+  };
+}
+
 /** Ranked sources as the viewer may see them: nicknames for members, channel names for admins. */
 export async function listTopSourcesForViewer(viewer: Viewer, limit: number) {
   const sourceRows = await listSources({ includeQa: viewer.access.isAdmin });
   const ranking = await getTopSources(sourceRows.map((s) => s.id), limit);
   const byId = new Map(sourceRows.map((s) => [s.id, s]));
-  const rows = ranking.top.map(({ sourceId, stats }) => {
-    const summary = presentSourceStats(stats, viewer.access, viewer.config).summary;
-    const source = byId.get(sourceId)!;
-    return {
-      sourceId,
-      name: sourceDisplayName(source, viewer.access),
-      closedTrades: stats.closedTrades,
-      metrics: summary.locked ? null : summary.data,
-    };
-  });
+  const rows = ranking.top.map(({ sourceId, stats, expectancyRank }) => presentRankedSource(byId.get(sourceId)!, stats, viewer, expectancyRank));
   return { rows, eligibleCount: ranking.eligibleCount, sourceCount: ranking.sourceCount };
+}
+
+export const SOURCE_DIRECTORY_PAGE = 25;
+export const SOURCE_DIRECTORY_TOP = 50;
+
+/**
+ * Top 50 is the expectancy cap. Search and the known-R filter read every tracked source,
+ * so a name outside that cap can still be opened.
+ */
+export async function listSourceDirectory(
+  viewer: Viewer,
+  opts: { q?: string; page?: number; eligibleOnly?: boolean },
+) {
+  const sourceRows = await listSources({ includeQa: viewer.access.isAdmin });
+  const ranking = await rankAllSources(sourceRows.map((source) => source.id));
+  const byId = new Map(sourceRows.map((source) => [source.id, source]));
+  const q = opts.q?.trim().toLowerCase() ?? "";
+  const page = Math.max(1, opts.page ?? 1);
+  const filtered = ranking.rows.filter((row) => {
+    if (opts.eligibleOnly && row.expectancyRank === null) return false;
+    if (!q) return true;
+    const source = byId.get(row.sourceId);
+    if (!source) return false;
+    const visible = sourceDisplayName(source, viewer.access).toLowerCase();
+    return visible.includes(q);
+  });
+  const ranked = [...filtered].sort((a, b) => {
+    if (a.expectancyRank !== null && b.expectancyRank !== null) return a.expectancyRank - b.expectancyRank;
+    if (a.expectancyRank !== null) return -1;
+    if (b.expectancyRank !== null) return 1;
+    return (byId.get(a.sourceId)?.name ?? "").localeCompare(byId.get(b.sourceId)?.name ?? "");
+  });
+  const top = ranking.rows
+    .filter((row) => row.expectancyRank !== null)
+    .sort((a, b) => a.expectancyRank! - b.expectancyRank!)
+    .slice(0, SOURCE_DIRECTORY_TOP)
+    .map((row) => presentRankedSource(byId.get(row.sourceId)!, row.stats, viewer, row.expectancyRank));
+  const start = (page - 1) * SOURCE_DIRECTORY_PAGE;
+  const matches = ranked.slice(start, start + SOURCE_DIRECTORY_PAGE).map((row) => presentRankedSource(byId.get(row.sourceId)!, row.stats, viewer, row.expectancyRank));
+  return {
+    top,
+    matches,
+    matchTotal: ranked.length,
+    page,
+    pages: Math.max(1, Math.ceil(ranked.length / SOURCE_DIRECTORY_PAGE)),
+    eligibleCount: ranking.eligibleCount,
+    sourceCount: ranking.sourceCount,
+    totalClosed: ranking.totalClosed,
+    expectancyMinRated: EXPECTANCY_MIN_RATED,
+  };
 }
 
 export async function getSourceBySlugOrId(key: string, opts: { includeQa?: boolean; allowSlug?: boolean } = {}) {

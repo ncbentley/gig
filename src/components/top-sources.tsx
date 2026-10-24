@@ -21,13 +21,17 @@ import {
   type TopSourceSortKey,
 } from "@/lib/top-source-filters";
 import { cn } from "@/lib/utils";
-import { TOP_SOURCES_MIN_TRADES } from "@/server/statistics/compute";
+import { EXPECTANCY_MIN_RATED, TOP_SOURCES_MIN_TRADES } from "@/server/statistics/compute";
 
 export type TopSourceRow = {
   sourceId: string;
   name: string;
   closedTrades: number;
-  metrics: { winRate: number | null; expectancy: number | null } | null;
+  ratedTrades?: number;
+  unknownR?: number;
+  /** Null means the source is not ranked on expectancy. Omitted on older snapshots. */
+  expectancyRank?: number | null;
+  metrics: { winRate: number | null; expectancy: number | null; ratedTrades?: number } | null;
 };
 
 type BoundDraft = { min: string; max: string };
@@ -212,7 +216,10 @@ export function TopSources({
 
   const filtering = filterActive(filter);
   const inverted = boundsInverted(filter.closedTrades) || boundsInverted(filter.winRatePercent) || boundsInverted(filter.expectancy);
-  const ranked = rows.map((row, index) => ({ row, rank: index + 1 }));
+  const ranked = rows.map((row, index) => ({
+    row,
+    rank: row.expectancyRank === undefined ? index + 1 : row.expectancyRank,
+  }));
   const shown = sortTopSources(
     ranked.filter(({ row }) => matchesTopSourceRow(row, filter)),
     sort,
@@ -225,7 +232,7 @@ export function TopSources({
   if (rows.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-glow/30 bg-glow/[0.03] p-8 text-center text-sm text-muted-foreground">
-        Rankings appear once a source has {TOP_SOURCES_MIN_TRADES} closed trades.
+        Rankings appear once a source has {TOP_SOURCES_MIN_TRADES} known-R trades. Closed trades without a known R do not qualify a source for expectancy.
       </div>
     );
   }
@@ -257,7 +264,11 @@ export function TopSources({
             shown.map(({ row: r, rank }) => (
               <TableRow key={r.sourceId}>
                 <TableCell>
-                  <Rank n={rank} />
+                  {rank === null ? (
+                    <span className="text-xs font-medium text-muted-foreground">Unranked</span>
+                  ) : (
+                    <Rank n={rank} />
+                  )}
                 </TableCell>
                 <TableCell className="font-medium text-foreground/90">
                   {hrefBase ? (
@@ -268,12 +279,26 @@ export function TopSources({
                     r.name
                   )}
                 </TableCell>
-                <TableCell className="text-right font-mono tabular-nums">{r.closedTrades}</TableCell>
+                <TableCell className="text-right font-mono tabular-nums">
+                  {r.closedTrades}
+                  <div className="text-[11px] font-sans text-muted-foreground">n = {r.closedTrades} closed</div>
+                </TableCell>
                 {r.metrics ? (
                   <>
-                    <TableCell className={cn("text-right font-mono tabular-nums", rank === 1 && "gold-text font-bold")}>{fmtPct(r.metrics.winRate)}</TableCell>
+                    <TableCell className={cn("text-right font-mono tabular-nums", rank === 1 && "gold-text font-bold")}>
+                      {fmtPct(r.metrics.winRate)}
+                      <div className="text-[11px] font-sans text-muted-foreground">n = {r.closedTrades} closed</div>
+                    </TableCell>
                     <TableCell className="text-right">
-                      <RValue value={r.metrics.expectancy} className="font-semibold" />
+                      {rank === null ? (
+                        <span className="text-xs text-muted-foreground">Unranked for expectancy</span>
+                      ) : (
+                        <RValue value={r.metrics.expectancy} className="font-semibold" />
+                      )}
+                      <div className="text-[11px] text-muted-foreground">
+                        n = {r.ratedTrades ?? r.metrics.ratedTrades ?? "—"} known R
+                        {r.unknownR ? ` · ${r.unknownR} unknown R` : ""}
+                      </div>
                     </TableCell>
                   </>
                 ) : (
@@ -288,7 +313,8 @@ export function TopSources({
       </Table>
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-glow/15 bg-black/20 px-3 py-2.5 text-xs text-muted-foreground">
         <span>
-          Ranked by expectancy among the {eligibleCount} of {sourceCount} sources with at least {TOP_SOURCES_MIN_TRADES} closed trades.
+          Ranked by expectancy among the {eligibleCount} of {sourceCount} sources with at least {EXPECTANCY_MIN_RATED} known-R trades.
+          Win rate uses closed trades, including closes with no stop. Expectancy uses only known R. A source below {TOP_SOURCES_MIN_TRADES} known-R trades is unranked for expectancy.
           {filtering ? ` Showing ${shown.length} of ${rows.length}.` : ""}
         </span>
         <span className="flex flex-wrap items-center gap-x-3 gap-y-1">

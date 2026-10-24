@@ -74,7 +74,7 @@ export function toggleTopSourceSort(current: TopSourceSort, key: TopSourceSortKe
 }
 
 export interface RankedTopSource {
-  rank: number;
+  rank: number | null;
   row: { name: string; closedTrades: number; metrics: { winRate: number | null; expectancy: number | null } | null };
 }
 
@@ -91,14 +91,16 @@ export function sortTopSources<T extends RankedTopSource>(items: readonly T[], s
   return [...items].sort((a, b) => {
     if (sort.key === "source") {
       const names = a.row.name.localeCompare(b.row.name, undefined, { sensitivity: "base" });
-      return names === 0 ? a.rank - b.rank : names * sign;
+      const rankOrder = (item: RankedTopSource) => item.rank ?? Number.MAX_SAFE_INTEGER;
+      return names === 0 ? rankOrder(a) - rankOrder(b) : names * sign;
     }
     const left = sortValue(a, sort.key);
     const right = sortValue(b, sort.key);
-    if (left === null && right === null) return a.rank - b.rank;
+    const rankOrder = (item: RankedTopSource) => item.rank ?? Number.MAX_SAFE_INTEGER;
+    if (left === null && right === null) return rankOrder(a) - rankOrder(b);
     if (left === null) return 1;
     if (right === null) return -1;
-    if (left === right) return a.rank - b.rank;
+    if (left === right) return rankOrder(a) - rankOrder(b);
     return (left - right) * sign;
   });
 }

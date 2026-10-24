@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { fmtDate, fmtMoney } from "@/lib/format";
 import { appUrl } from "@/server/auth";
+import { PASS_PRICE_CENTS } from "@/server/billing/pass";
 import { getDb } from "@/server/db";
 import {
   referralAdjustments,
@@ -17,12 +18,10 @@ import {
 } from "@/server/db/schema";
 import { TIER_LABEL } from "@/server/entitlements/config";
 import { getViewer } from "@/server/entitlements/service";
-import { feeLabel, requestableBalance } from "@/server/referrals/money";
+import { feeLabel, MIN_WITHDRAWAL_CENTS, referralRulesBesidePurchase, requestableBalance } from "@/server/referrals/money";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 
 export const metadata: Metadata = { title: "Referrals" };
-
-const MIN_WITHDRAWAL_CENTS = 2500;
 
 export default async function ReferralsPage() {
   const viewer = await getViewer();
@@ -131,8 +130,9 @@ export default async function ReferralsPage() {
                 </div>
               </>
             ) : (
-              <p className="text-muted-foreground">Your code is created with your first monthly payment.</p>
+              <p className="text-muted-foreground">Your code is created with your first monthly payment. The 10-day pass does not create one.</p>
             )}
+            <p className="text-muted-foreground">{referralRulesBesidePurchase(PASS_PRICE_CENTS)}</p>
           </CardContent>
         </Card>
 

@@ -1,7 +1,15 @@
+import { fmtMoney } from "@/lib/format";
 import type { Tier } from "@/server/db/schema";
 
 const RANK: Record<Tier, number> = { basic: 0, silver: 1, gold: 2 };
 export const REFERRAL_FEE_CENTS: Record<Tier, number> = { basic: 1100, silver: 2200, gold: 3300 };
+/** Manual bank withdrawal floor. The app does not move the money. */
+export const MIN_WITHDRAWAL_CENTS = 2500;
+
+/** Rules a buyer can read before paying. Amounts come from the constants above. */
+export function referralRulesBesidePurchase(passPriceCents: number) {
+  return `The ${fmtMoney(passPriceCents)} pass does not create a referral code and earns no commission. A code is created with the first monthly payment. The fee is the lower of the two monthly tiers, and only when the collected amount equals that customer's catalog monthly price. Manual withdrawals start at ${fmtMoney(MIN_WITHDRAWAL_CENTS)}.`;
+}
 
 export function lowerTier(a: Tier, b: Tier): Tier {
   return RANK[a] <= RANK[b] ? a : b;

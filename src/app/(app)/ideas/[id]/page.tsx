@@ -10,6 +10,7 @@ import { DirectionBadge, Stat } from "@/components/signal-bits";
 import { SignalList } from "@/components/signal-list";
 import { marketDataNotice, tradeChartRange } from "@/lib/chart-window";
 import { fmtDateTime, fmtEntry, fmtPrice } from "@/lib/format";
+import { replayLadderNonMonotonic } from "@/server/ideas/targets";
 import { tradeMarkers } from "@/lib/trade-markers";
 import { nowMs } from "@/lib/clock";
 import { cn } from "@/lib/utils";
@@ -150,12 +151,19 @@ export default async function IdeaPage({ params }: PageProps<"/ideas/[id]">) {
                       TP{index + 1} {fmtPrice(price)}
                     </span>
                   ))
-                : "—"}
+                : "No targets supplied"}
             </span>
           }
         />
         <Stat icon={Crosshair} label="Path" value={path} hint={pathHint} />
       </div>
+      <p className="mb-6 max-w-3xl text-sm leading-relaxed text-muted-foreground">
+        Targets above are the stored replay ladder: the mean of each slot, in stored order.
+        {replayLadderNonMonotonic(idea.direction, idea.targets)
+          ? " This ladder is not monotonic. It has not been reordered, so the slot order is not a further-along price ladder."
+          : ""}{" "}
+        Stop and target slots average the prices sources supplied. A source with no stop is left out of the stop mean. The calls below keep each source’s own targets.
+      </p>
       <div className="mb-8 rounded-xl bg-[#050c1c]/80 p-2 ring-1 ring-glow/25 shadow-[inset_0_0_30px_-12px_rgb(47_123_255/0.4)]">
         <PriceChart points={downsample(bars)} levels={levels} markers={markers} notice={marketDataNotice({ bars, calledAt: startedMs, filledAt: outcome.entryTime })} />
       </div>

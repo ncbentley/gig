@@ -310,6 +310,24 @@ describe("checkpoint", () => {
     expect(next.rResult).toBe(full.rResult);
   });
 
+  it("does not fill a 2026 call from a 2025 bar in the same series", () => {
+    const call = Date.parse("2026-10-23T02:30:12Z");
+    const signal: EngineSignal = {
+      direction: "LONG",
+      entryType: "LIMIT",
+      entryMin: 4016,
+      entryMax: 4016,
+      stopLoss: 4000,
+      targets: [4025],
+      signalTime: call,
+      expiryTime: null,
+    };
+    const history: EngineBar = { t: Date.parse("2025-10-08T02:26:00Z"), o: 4015.63, h: 4016, l: 4015.62, c: 4016 };
+    const out = evaluateSignal(signal, [history], [], call + 60_000);
+    expect(out.entered).toBe(false);
+    expect(out.entryTime).toBeNull();
+  });
+
   it("does not fill a call from bars before it when the checkpoint has not reached the call", () => {
     const call = Date.UTC(2026, 9, 23, 6, 35);
     const signal: EngineSignal = {
