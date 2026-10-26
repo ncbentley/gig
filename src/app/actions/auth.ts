@@ -24,6 +24,8 @@ import { createMemberAccount } from "@/server/auth/register";
 import { getDb } from "@/server/db";
 import { sessions, users } from "@/server/db/schema";
 import { referrerIdForCode } from "@/server/referrals/attribute";
+import { TelegramLinkError } from "@/server/telegram/links";
+import { applyPendingTelegramSignup, pendingLinkForSignup } from "@/server/telegram/pending-signup";
 
 export type FormState = { error?: string; ok?: string } | undefined;
 
@@ -50,15 +52,32 @@ export async function signupAction(_: FormState, form: FormData): Promise<FormSt
   const db = await getDb();
   const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, parsed.data.email));
   if (existing) return { error: "An account with this email already exists. Sign in instead." };
-  const refRaw = (await cookies()).get("ref")?.value;
+  const jar = await cookies();
+  const refRaw = jar.get("ref")?.value;
   const refCode = refRaw?.trim().toUpperCase();
   const referredByUserId = refCode ? await referrerIdForCode(refCode) : null;
+  const pending = await pendingLinkForSignup(jar.get("tg_pending")?.value, process.env.APP_SECRET ?? "", Date.now());
+  if (pending && "error" in pending) return { error: pending.error };
   const user = await createMemberAccount({
     email: parsed.data.email,
     passwordHash: await hashPassword(parsed.data.password),
     referredByUserId,
   });
   await sendVerificationEmail(user);
+  if (pending) {
+    try {
+      await applyPendingTelegramSignup({ userId: user.id, pending });
+    } catch (error) {
+      if (!(error instanceof TelegramLinkError)) throw error;
+    }
+    jar.set("tg_pending", "", {
+      httpOnly: true,
+      sameSite: "lax",
+      path: "/",
+      maxAge: 0,
+      secure: process.env.NODE_ENV === "production",
+    });
+  }
   await createSession(user.id);
   await identifyAttribution(user.id);
   await trackEvent("account_created", user.id);
