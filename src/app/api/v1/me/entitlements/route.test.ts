@@ -5,6 +5,7 @@ import { closeDb, getDb } from "@/server/db";
 import { runMigrations } from "@/server/db/migrate";
 import { sessions, subscriptions, users } from "@/server/db/schema";
 import { sha256 } from "@/server/lib/hash";
+import { linkTelegram, revokeTelegramLink } from "@/server/telegram/links";
 import { GET } from "./route";
 
 const headerState = vi.hoisted(() => ({
@@ -55,6 +56,12 @@ describe("GET /api/v1/me/entitlements", () => {
   it("returns the telegram member tier when Authorization is a bearer and the website cookie is absent", async () => {
     const member = await createEntitledMember("basic");
     try {
+      await linkTelegram({
+        userId: member.id,
+        telegramUserId: `8${crypto.randomUUID().replaceAll("-", "").slice(0, 15)}`,
+        username: "ada",
+        authDate: new Date(),
+      });
       const { token } = await createTelegramSession(member.id);
       headerState.headers = new Headers({ authorization: `Bearer ${token}` });
       cookieState.values = new Map();
@@ -95,6 +102,62 @@ describe("GET /api/v1/me/entitlements", () => {
     } finally {
       const db = await getDb();
       await db.delete(users).where(eq(users.id, cookieUser.id));
+    }
+  });
+
+  it("rejects a telegram bearer after the link is revoked even if a telegram session survives", async () => {
+    const member = await createEntitledMember("basic");
+    try {
+      await linkTelegram({
+        userId: member.id,
+        telegramUserId: `9${crypto.randomUUID().replaceAll("-", "").slice(0, 15)}`,
+        username: "ada",
+        authDate: new Date(),
+      });
+      const { token } = await createTelegramSession(member.id);
+      headerState.headers = new Headers({ authorization: `Bearer ${token}` });
+      cookieState.values = new Map();
+
+      expect((await GET()).status).toBe(200);
+
+      await revokeTelegramLink(member.id);
+      const db = await getDb();
+      await db.insert(sessions).values({
+        id: sha256(token),
+        userId: member.id,
+        expiresAt: new Date(Date.now() + 12 * 60 * 60 * 1000),
+        source: "telegram",
+      });
+
+      const res = await GET();
+      expect(res.status).toBe(401);
+      expect(await res.json()).toEqual({ error: { code: "unauthenticated", message: "Sign in to use the API." } });
+    } finally {
+      const db = await getDb();
+      await db.delete(users).where(eq(users.id, member.id));
+    }
+  });
+
+  it("accepts a web session bearer for a user with no Telegram link", async () => {
+    const member = await createEntitledMember("gold");
+    try {
+      const token = crypto.randomUUID();
+      const db = await getDb();
+      await db.insert(sessions).values({
+        id: sha256(token),
+        userId: member.id,
+        expiresAt: new Date(Date.now() + 86_400_000),
+        source: "web",
+      });
+      headerState.headers = new Headers({ authorization: `Bearer ${token}` });
+      cookieState.values = new Map();
+
+      const res = await GET();
+      expect(res.status).toBe(200);
+      expect((await res.json()).data.tier).toBe("gold");
+    } finally {
+      const db = await getDb();
+      await db.delete(users).where(eq(users.id, member.id));
     }
   });
 

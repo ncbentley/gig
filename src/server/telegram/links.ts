@@ -30,6 +30,16 @@ export async function findActiveLinkByTelegramId(telegramUserId: string) {
   return row ?? null;
 }
 
+export async function findActiveLinkByUserId(userId: string) {
+  const db = await getDb();
+  const [row] = await db
+    .select()
+    .from(telegramLinks)
+    .where(and(eq(telegramLinks.userId, userId), isNull(telegramLinks.revokedAt)))
+    .limit(1);
+  return row ?? null;
+}
+
 export async function linkTelegram(input: {
   userId: string;
   telegramUserId: string;
@@ -39,11 +49,7 @@ export async function linkTelegram(input: {
   const db = await getDb();
   const current = await findActiveLinkByTelegramId(input.telegramUserId);
   if (current && current.userId !== input.userId) throw new TelegramLinkError("telegram_taken");
-  const [own] = await db
-    .select()
-    .from(telegramLinks)
-    .where(and(eq(telegramLinks.userId, input.userId), isNull(telegramLinks.revokedAt)))
-    .limit(1);
+  const own = await findActiveLinkByUserId(input.userId);
   if (own && own.telegramUserId !== input.telegramUserId) throw new TelegramLinkError("already_linked");
   if (own) {
     await db

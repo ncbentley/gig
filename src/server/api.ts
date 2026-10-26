@@ -1,7 +1,8 @@
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
-import { userFromSessionToken } from "@/server/auth";
+import { findActiveSession } from "@/server/auth";
 import { getViewer, viewerForUser, type Viewer } from "@/server/entitlements/service";
+import { findActiveLinkByUserId } from "@/server/telegram/links";
 
 export function json(data: unknown, init?: number | ResponseInit) {
   return NextResponse.json(data, typeof init === "number" ? { status: init } : init);
@@ -20,9 +21,12 @@ function bearerToken(authorization: string | null): string | null {
 export async function withViewer(fn: (viewer: Viewer) => Promise<Response>): Promise<Response> {
   const token = bearerToken((await headers()).get("authorization"));
   if (token !== null) {
-    const user = await userFromSessionToken(token);
-    if (!user) return apiError(401, "unauthenticated", "Sign in to use the API.");
-    return fn(await viewerForUser(user));
+    const session = await findActiveSession(token);
+    if (!session) return apiError(401, "unauthenticated", "Sign in to use the API.");
+    if (session.source === "telegram" && !(await findActiveLinkByUserId(session.user.id))) {
+      return apiError(401, "unauthenticated", "Sign in to use the API.");
+    }
+    return fn(await viewerForUser(session.user));
   }
   const viewer = await getViewer();
   if (!viewer.user) return apiError(401, "unauthenticated", "Sign in to use the API.");
