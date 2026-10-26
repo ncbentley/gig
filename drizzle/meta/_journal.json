@@ -204,6 +204,13 @@
       "when": 1793059200000,
       "tag": "0028_signal_levels",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1793145600000,
+      "tag": "0029_telegram_links",
+      "breakpoints": true
     }
   ]
 }

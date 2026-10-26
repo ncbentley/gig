@@ -12,9 +12,10 @@ export default async function SignupPage({ searchParams }: PageProps<"/signup">)
   const sp = await searchParams;
   if (await getCurrentUser()) redirect("/dashboard");
   const next = typeof sp.next === "string" ? sp.next : "";
+  const finishingTelegram = sp.telegram === "1";
   return (
     <AuthCard
-      title="Create your account"
+      title={finishingTelegram ? "Finish your GIG account" : "Create your account"}
       description="Then choose a monthly plan or the 10-day pass. A new account does not include signal access."
       footer={
         <>

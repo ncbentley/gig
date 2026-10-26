@@ -70,12 +70,15 @@ export interface Viewer {
 }
 
 /**
- * Per-request viewer context. Member pages and the member API honor an admin's
- * view-as choice. Pass "admin" from admin screens so previewing Silver does not
- * hide the operator's own tools.
+ * Viewer for a user already resolved by the caller. `viewAs` is only applied for
+ * an admin, and only when the caller supplies it. Bearer auth passes nothing here
+ * so a website preview cookie cannot downgrade that session.
  */
-export const getViewer = cache(async (scope: "member" | "admin" = "member"): Promise<Viewer> => {
-  const user = await getCurrentUser();
+export async function viewerForUser(
+  user: User | null,
+  options: { scope?: "member" | "admin"; viewAs?: ViewAs | null } = {},
+): Promise<Viewer> {
+  const scope = options.scope ?? "member";
   const config = await getTierConfig();
   const db = await getDb();
   const [subscription, complimentary, [pass]] = user
@@ -90,7 +93,7 @@ export const getViewer = cache(async (scope: "member" | "admin" = "member"): Pro
           .limit(1),
       ])
     : [null, null, [] as { endsAt: Date }[]];
-  const requested = user?.role === "admin" ? parseViewAs((await cookies()).get(VIEW_AS_COOKIE)?.value) : null;
+  const requested = user?.role === "admin" ? (options.viewAs ?? null) : null;
   const viewAs = scope === "member" ? requested : null;
   const access =
     user?.role === "admin"
@@ -106,4 +109,15 @@ export const getViewer = cache(async (scope: "member" | "admin" = "member"): Pro
           })
         : ANONYMOUS;
   return { user, access, config, subscription, complimentary, viewAs: requested };
+}
+
+/**
+ * Per-request viewer context. Member pages and the member API honor an admin's
+ * view-as choice. Pass "admin" from admin screens so previewing Silver does not
+ * hide the operator's own tools.
+ */
+export const getViewer = cache(async (scope: "member" | "admin" = "member"): Promise<Viewer> => {
+  const user = await getCurrentUser();
+  const viewAs = user?.role === "admin" ? parseViewAs((await cookies()).get(VIEW_AS_COOKIE)?.value) : null;
+  return viewerForUser(user, { scope, viewAs });
 });

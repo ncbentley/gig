@@ -12,7 +12,9 @@ import {
   signalTargets,
   signals,
   sources,
+  users,
 } from "@/server/db/schema";
+import { createTelegramSession } from "@/server/auth";
 import { resetRateLimits } from "@/server/auth/rate-limit";
 import { GET } from "./route";
 
@@ -213,6 +215,19 @@ describe("GET /api/v1/research/feed", () => {
     const body = await wrong.json();
     expect(body.error.code).toBe("invalid_token");
     expect(JSON.stringify(body)).not.toContain(TOKEN);
+  });
+
+  it("rejects a telegram member session bearer instead of treating it as the feed token", async () => {
+    const db = await getDb();
+    const [user] = await db
+      .insert(users)
+      .values({ email: `research-feed-${crypto.randomUUID()}@example.com`, passwordHash: "x" })
+      .returning();
+    const { token } = await createTelegramSession(user!.id);
+    const res = await GET(new Request("http://localhost/api/v1/research/feed", { headers: { authorization: `Bearer ${token}` } }));
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.error.code).toBe("invalid_token");
   });
 
   it("returns 429 with Retry-After after the budget is spent", async () => {

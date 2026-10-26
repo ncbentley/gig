@@ -48,14 +48,34 @@ export const users = pgTable("users", {
 export const sessions = pgTable(
   "sessions",
   {
-    id: text("id").primaryKey(), // sha256 of the cookie token
+    id: text("id").primaryKey(), // sha256 of the session token (website cookie or Telegram bearer)
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     expiresAt: ts("expires_at").notNull(),
     createdAt: createdAt(),
+    source: text("source", { enum: ["web", "telegram"] }).notNull().default("web"),
   },
   (t) => [index("sessions_user_idx").on(t.userId)],
+);
+
+export const telegramLinks = pgTable(
+  "telegram_links",
+  {
+    id: id(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    telegramUserId: text("telegram_user_id").notNull(),
+    telegramUsername: text("telegram_username"),
+    authDate: ts("auth_date").notNull(),
+    createdAt: createdAt(),
+    revokedAt: ts("revoked_at"),
+  },
+  (t) => [
+    uniqueIndex("telegram_links_active_user").on(t.userId).where(sql`${t.revokedAt} is null`),
+    uniqueIndex("telegram_links_active_telegram").on(t.telegramUserId).where(sql`${t.revokedAt} is null`),
+  ],
 );
 
 export const authTokens = pgTable("auth_tokens", {

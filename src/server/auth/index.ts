@@ -26,7 +26,7 @@ export async function createSession(userId: string) {
   const db = await getDb();
   const token = randomToken();
   const expiresAt = new Date(Date.now() + SESSION_DAYS * 86_400_000);
-  await db.insert(sessions).values({ id: sha256(token), userId, expiresAt });
+  await db.insert(sessions).values({ id: sha256(token), userId, expiresAt, source: "web" });
   const jar = await cookies();
   jar.set(SESSION_COOKIE, token, {
     httpOnly: true,
@@ -35,6 +35,14 @@ export async function createSession(userId: string) {
     path: "/",
     expires: expiresAt,
   });
+}
+
+export async function createTelegramSession(userId: string) {
+  const db = await getDb();
+  const token = randomToken();
+  const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000);
+  await db.insert(sessions).values({ id: sha256(token), userId, expiresAt, source: "telegram" });
+  return { token, expiresAt };
 }
 
 export async function destroySession() {
@@ -47,20 +55,37 @@ export async function destroySession() {
   jar.delete(SESSION_COOKIE);
 }
 
-export async function userFromSessionToken(token: string | undefined | null): Promise<User | null> {
+export type SessionSource = "web" | "telegram";
+
+/** Active session for a raw token. Callers that care about website vs Mini App read `source`. */
+export async function findActiveSession(
+  token: string | undefined | null,
+): Promise<{ user: User; source: SessionSource } | null> {
   if (!token) return null;
   const db = await getDb();
   const [row] = await db
-    .select({ user: users })
+    .select({ user: users, source: sessions.source })
     .from(sessions)
     .innerJoin(users, eq(users.id, sessions.userId))
     .where(and(eq(sessions.id, sha256(token)), gt(sessions.expiresAt, new Date())));
-  return row?.user ?? null;
+  return row ?? null;
+}
+
+export async function userFromSessionToken(token: string | undefined | null): Promise<User | null> {
+  const session = await findActiveSession(token);
+  return session?.user ?? null;
+}
+
+/** Website cookie auth. A Mini App bearer is not a website login. */
+export async function userFromWebSessionToken(token: string | undefined | null): Promise<User | null> {
+  const session = await findActiveSession(token);
+  if (session?.source !== "web") return null;
+  return session.user;
 }
 
 export const getCurrentUser = cache(async (): Promise<User | null> => {
   const jar = await cookies();
-  return userFromSessionToken(jar.get(SESSION_COOKIE)?.value);
+  return userFromWebSessionToken(jar.get(SESSION_COOKIE)?.value);
 });
 
 export async function sendEmail(to: string, subject: string, body: string) {
