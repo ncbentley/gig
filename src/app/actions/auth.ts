@@ -24,8 +24,7 @@ import { createMemberAccount } from "@/server/auth/register";
 import { getDb } from "@/server/db";
 import { sessions, users } from "@/server/db/schema";
 import { referrerIdForCode } from "@/server/referrals/attribute";
-import { TelegramLinkError } from "@/server/telegram/links";
-import { applyPendingTelegramSignup, pendingLinkForSignup } from "@/server/telegram/pending-signup";
+import { finishPendingTelegramSignup, pendingLinkForSignup } from "@/server/telegram/pending-signup";
 
 export type FormState = { error?: string; ok?: string } | undefined;
 
@@ -44,6 +43,16 @@ async function limited(action: string, limit: number) {
   return !rateLimit(`${action}:${ip}`, limit, 15 * 60_000).ok;
 }
 
+function clearPendingTelegramCookie(jar: Awaited<ReturnType<typeof cookies>>) {
+  jar.set("tg_pending", "", {
+    httpOnly: true,
+    sameSite: "lax",
+    path: "/",
+    maxAge: 0,
+    secure: process.env.NODE_ENV === "production",
+  });
+}
+
 export async function signupAction(_: FormState, form: FormData): Promise<FormState> {
   if (await limited("signup", 10)) return { error: "Too many attempts. Try again in a few minutes." };
   const parsed = credentials.safeParse({ email: form.get("email"), password: form.get("password") });
@@ -58,25 +67,18 @@ export async function signupAction(_: FormState, form: FormData): Promise<FormSt
   const referredByUserId = refCode ? await referrerIdForCode(refCode) : null;
   const pending = await pendingLinkForSignup(jar.get("tg_pending")?.value, process.env.APP_SECRET ?? "", Date.now());
   if (pending && "error" in pending) return { error: pending.error };
+  const link = pending && "telegramUserId" in pending ? pending : null;
+  if (pending && "clear" in pending) clearPendingTelegramCookie(jar);
   const user = await createMemberAccount({
     email: parsed.data.email,
     passwordHash: await hashPassword(parsed.data.password),
     referredByUserId,
   });
   await sendVerificationEmail(user);
-  if (pending) {
-    try {
-      await applyPendingTelegramSignup({ userId: user.id, pending });
-    } catch (error) {
-      if (!(error instanceof TelegramLinkError)) throw error;
-    }
-    jar.set("tg_pending", "", {
-      httpOnly: true,
-      sameSite: "lax",
-      path: "/",
-      maxAge: 0,
-      secure: process.env.NODE_ENV === "production",
-    });
+  if (link) {
+    const finished = await finishPendingTelegramSignup({ userId: user.id, pending: link });
+    if ("error" in finished) return { error: finished.error };
+    clearPendingTelegramCookie(jar);
   }
   await createSession(user.id);
   await identifyAttribution(user.id);
