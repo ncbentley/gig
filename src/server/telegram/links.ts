@@ -55,9 +55,11 @@ export async function linkTelegram(input: {
 
 export async function revokeTelegramLink(userId: string) {
   const db = await getDb();
-  await db
-    .update(telegramLinks)
-    .set({ revokedAt: new Date() })
-    .where(and(eq(telegramLinks.userId, userId), isNull(telegramLinks.revokedAt)));
-  await db.delete(sessions).where(and(eq(sessions.userId, userId), eq(sessions.source, "telegram")));
+  await db.transaction(async (tx) => {
+    await tx
+      .update(telegramLinks)
+      .set({ revokedAt: new Date() })
+      .where(and(eq(telegramLinks.userId, userId), isNull(telegramLinks.revokedAt)));
+    await tx.delete(sessions).where(and(eq(sessions.userId, userId), eq(sessions.source, "telegram")));
+  });
 }
