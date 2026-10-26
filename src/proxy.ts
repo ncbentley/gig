@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { ATTR_COOKIE, TOUCH_HEADER, VID_COOKIE, advanceAttribution, decodeAttribution, encodeAttribution, touchFromRequest } from "@/server/analytics/attribution";
+import { applyMiniAppCors } from "@/server/http/cors";
 import { isReferralCode } from "@/server/referrals/code";
 import { TELEGRAM_LINK_STATE_COOKIE, TELEGRAM_LINK_STATE_HEADER, resolveTelegramLinkState } from "@/server/telegram/link-state";
 
@@ -9,6 +10,11 @@ const REF_COOKIE = "ref";
 const REF_MAX_AGE = 30 * 24 * 60 * 60;
 
 export function proxy(request: NextRequest) {
+  const miniApp = request.nextUrl.pathname.startsWith("/api/v1/");
+  if (miniApp && request.method === "OPTIONS") {
+    return applyMiniAppCors(new NextResponse(null, { status: 204 }));
+  }
+
   const existing = decodeAttribution(request.cookies.get(ATTR_COOKIE)?.value);
   const visitorId = request.cookies.get(VID_COOKIE)?.value ?? null;
   const touch = touchFromRequest({
@@ -59,6 +65,7 @@ export function proxy(request: NextRequest) {
     });
   }
 
+  if (miniApp) applyMiniAppCors(response);
   return response;
 }
 
