@@ -48,7 +48,7 @@ export const users = pgTable("users", {
 export const sessions = pgTable(
   "sessions",
   {
-    id: text("id").primaryKey(), // sha256 of the cookie token
+    id: text("id").primaryKey(), // sha256 of the session token (website cookie or Telegram bearer)
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
