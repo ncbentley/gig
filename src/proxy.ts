@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { ATTR_COOKIE, TOUCH_HEADER, VID_COOKIE, advanceAttribution, decodeAttribution, encodeAttribution, touchFromRequest } from "@/server/analytics/attribution";
 import { isReferralCode } from "@/server/referrals/code";
+import { TELEGRAM_LINK_STATE_HEADER, issueTelegramLinkState } from "@/server/telegram/link-state";
 
 const YEAR_SECONDS = 400 * 24 * 60 * 60;
 const REF_COOKIE = "ref";
@@ -20,7 +21,11 @@ export function proxy(request: NextRequest) {
 
   const requestHeaders = new Headers(request.headers);
   requestHeaders.delete(TOUCH_HEADER);
+  requestHeaders.delete(TELEGRAM_LINK_STATE_HEADER);
   if (write) requestHeaders.set(TOUCH_HEADER, encodeAttribution(state));
+  const path = request.nextUrl.pathname;
+  const telegramLink = path === "/account" || path === "/account/" ? issueTelegramLinkState() : null;
+  if (telegramLink) requestHeaders.set(TELEGRAM_LINK_STATE_HEADER, telegramLink.state);
 
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   const cookie = {
@@ -35,6 +40,16 @@ export function proxy(request: NextRequest) {
 
   const refParam = request.nextUrl.searchParams.get("ref");
   const ref = refParam?.trim().toUpperCase();
+  if (telegramLink) {
+    response.cookies.set(telegramLink.cookie.name, telegramLink.cookie.value, {
+      httpOnly: telegramLink.cookie.httpOnly,
+      sameSite: telegramLink.cookie.sameSite,
+      path: telegramLink.cookie.path,
+      maxAge: telegramLink.cookie.maxAge,
+      secure: telegramLink.cookie.secure,
+    });
+  }
+
   if (ref && isReferralCode(ref)) {
     response.cookies.set(REF_COOKIE, ref, {
       httpOnly: true,

@@ -1,6 +1,7 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { CalendarDays, Check, Crown, KeyRound, LogOut, Mail, ShieldCheck, UserRound } from "lucide-react";
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import Link from "next/link";
 import { logoutAction } from "@/app/actions/auth";
 import { disconnectTelegramAction } from "@/app/actions/telegram-link";
@@ -15,6 +16,7 @@ import { telegramLinks } from "@/server/db/schema";
 import { FEATURE_CATALOG, historyWindowLabel, TIER_LABEL } from "@/server/entitlements/config";
 import { appliedComplimentary } from "@/server/entitlements/complimentary";
 import { getViewer } from "@/server/entitlements/service";
+import { TELEGRAM_LINK_STATE_HEADER } from "@/server/telegram/link-state";
 
 export const metadata: Metadata = { title: "My profile" };
 
@@ -43,6 +45,7 @@ export default async function AccountPage({ searchParams }: PageProps<"/account"
   const telegramNote = typeof sp.telegram === "string" ? TELEGRAM_NOTE[sp.telegram] : undefined;
   const botToken = process.env.TELEGRAM_LINK_BOT_TOKEN;
   const botUsername = process.env.TELEGRAM_LINK_BOT_USERNAME;
+  const linkState = (await headers()).get(TELEGRAM_LINK_STATE_HEADER);
   const telegramReady = Boolean(botToken && botUsername);
   const db = await getDb();
   const [telegramLink] = telegramReady
@@ -123,15 +126,15 @@ export default async function AccountPage({ searchParams }: PageProps<"/account"
                     </Button>
                   </form>
                 </div>
-              ) : (
+              ) : linkState ? (
                 <script
                   async
                   src="https://telegram.org/js/telegram-widget.js?22"
                   data-telegram-login={botUsername}
                   data-size="large"
-                  data-auth-url={`${process.env.APP_URL ?? ""}/api/telegram/link`}
+                  data-auth-url={`${process.env.APP_URL ?? ""}/api/telegram/link/${encodeURIComponent(linkState)}`}
                 />
-              )}
+              ) : null}
             </div>
             <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
               We never ask for brokerage credentials, account balances or positions. The product does not personalise information to your finances.

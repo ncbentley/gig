@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { GET } from "./route";
 
 describe("GET /api/telegram/link", () => {
-  it("redirects a repeated query key to the invalid account state", async () => {
-    const request = new Request("http://localhost/api/telegram/link?id=1&id=2");
+  it("rejects a callback that has no browser state in the path", async () => {
+    const request = new Request("http://localhost/api/telegram/link?id=42&username=ada");
     try {
       await GET(request);
       expect.unreachable("GET should redirect");

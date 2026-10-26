@@ -10,6 +10,7 @@ import { readPendingTelegram } from "./pending";
 const token = "123456:TEST";
 const appSecret = "app-secret";
 const nowSeconds = 1_700_000_100;
+const state = "browser-state-token";
 
 function compareKeys(a: string, b: string) {
   if (a < b) return -1;
@@ -29,6 +30,19 @@ function widgetHash(fields: Record<string, string>, botToken: string) {
 function signedFields(overrides: Record<string, string> = {}) {
   const fields = { auth_date: String(nowSeconds), id: "42", username: "ada", ...overrides };
   return { ...fields, hash: widgetHash(fields, token) };
+}
+
+function decide(overrides: Partial<Parameters<typeof decideTelegramLink>[0]> = {}) {
+  return decideTelegramLink({
+    fields: signedFields(),
+    userId: null,
+    botToken: token,
+    appSecret,
+    nowSeconds,
+    pathState: state,
+    cookieState: state,
+    ...overrides,
+  });
 }
 
 beforeAll(async () => {
@@ -54,15 +68,10 @@ describe("decideTelegramLink", () => {
   });
 
   it("sets a pending cookie and sends a signed-out visitor to signup", async () => {
-    const result = await decideTelegramLink({
-      fields: signedFields(),
-      userId: null,
-      botToken: token,
-      appSecret,
-      nowSeconds,
-    });
+    const result = await decide();
 
     expect(result.redirect).toBe("/signup?telegram=1");
+    expect(result.clearState).toBe(true);
     expect(result.setCookie).toMatchObject({
       name: "tg_pending",
       httpOnly: true,
@@ -87,15 +96,10 @@ describe("decideTelegramLink", () => {
     const id = user!.id;
     userIds = [id];
 
-    const result = await decideTelegramLink({
-      fields: signedFields(),
-      userId: id,
-      botToken: token,
-      appSecret,
-      nowSeconds,
-    });
+    const result = await decide({ userId: id });
 
     expect(result.redirect).toBe("/account?telegram=connected");
+    expect(result.clearState).toBe(true);
     expect(result.setCookie).toBeUndefined();
     const rows = await db
       .select()
@@ -106,16 +110,11 @@ describe("decideTelegramLink", () => {
   });
 
   it("reports the link as unconfigured when the bot token or signed-out app secret is missing", async () => {
-    const fields = signedFields();
-    await expect(
-      decideTelegramLink({ fields, userId: null, botToken: undefined, appSecret, nowSeconds }),
-    ).resolves.toEqual({ redirect: "/account?telegram=unconfigured" });
-    await expect(
-      decideTelegramLink({ fields, userId: null, botToken: token, appSecret: "", nowSeconds }),
-    ).resolves.toEqual({ redirect: "/account?telegram=unconfigured" });
-    await expect(
-      decideTelegramLink({ fields, userId: "someone", botToken: undefined, appSecret: undefined, nowSeconds }),
-    ).resolves.toEqual({ redirect: "/account?telegram=unconfigured" });
+    await expect(decide({ botToken: undefined })).resolves.toEqual({ redirect: "/account?telegram=unconfigured" });
+    await expect(decide({ appSecret: "" })).resolves.toEqual({ redirect: "/account?telegram=unconfigured" });
+    await expect(decide({ userId: "someone", botToken: undefined, appSecret: undefined })).resolves.toEqual({
+      redirect: "/account?telegram=unconfigured",
+    });
   });
 
   it("redirects when the telegram account or the member is already linked", async () => {
@@ -132,32 +131,13 @@ describe("decideTelegramLink", () => {
     const otherId = second!.id;
     userIds = [id, otherId];
 
-    await decideTelegramLink({
-      fields: signedFields(),
-      userId: id,
-      botToken: token,
-      appSecret,
-      nowSeconds,
-    });
+    await decide({ userId: id });
 
-    const taken = await decideTelegramLink({
-      fields: signedFields(),
-      userId: otherId,
-      botToken: token,
-      appSecret,
-      nowSeconds,
-    });
-    expect(taken).toEqual({ redirect: "/account?telegram=taken" });
+    const taken = await decide({ userId: otherId });
+    expect(taken).toEqual({ redirect: "/account?telegram=taken", clearState: true });
 
-    const otherFields = signedFields({ id: "99", username: "ada" });
-    const already = await decideTelegramLink({
-      fields: otherFields,
-      userId: id,
-      botToken: token,
-      appSecret,
-      nowSeconds,
-    });
-    expect(already).toEqual({ redirect: "/account?telegram=already" });
+    const already = await decide({ userId: id, fields: signedFields({ id: "99", username: "ada" }) });
+    expect(already).toEqual({ redirect: "/account?telegram=already", clearState: true });
 
     const rows = await db.select().from(telegramLinks).where(eq(telegramLinks.userId, id));
     expect(rows).toHaveLength(1);
@@ -174,15 +154,32 @@ describe("decideTelegramLink", () => {
     userIds = [id];
 
     const fields = signedFields();
-    const result = await decideTelegramLink({
-      fields: { ...fields, username: "eve" },
-      userId: id,
-      botToken: token,
-      appSecret,
-      nowSeconds,
-    });
+    const result = await decide({ userId: id, fields: { ...fields, username: "eve" } });
 
     expect(result.redirect).toBe("/account?telegram=invalid");
+    expect(result.setCookie).toBeUndefined();
+    expect(result.clearState).toBeUndefined();
+    const rows = await db.select().from(telegramLinks).where(eq(telegramLinks.userId, id));
+    expect(rows).toHaveLength(0);
+  });
+
+  it("does not link or set tg_pending when the browser state is missing or different", async () => {
+    const db = await getDb();
+    const [user] = await db
+      .insert(users)
+      .values({ email: `tg-state-${crypto.randomUUID()}@example.com`, passwordHash: "x" })
+      .returning({ id: users.id });
+    const id = user!.id;
+    userIds = [id];
+
+    const missing = await decide({ userId: id, cookieState: null });
+    expect(missing).toEqual({ redirect: "/account?telegram=invalid" });
+    const mismatched = await decide({ userId: null, pathState: "aaaaaaaa", cookieState: "bbbbbbbb" });
+    expect(mismatched.redirect).toBe("/account?telegram=invalid");
+    expect(mismatched.setCookie).toBeUndefined();
+    const differentLength = await decide({ userId: id, pathState: "short", cookieState: "much-longer-state" });
+    expect(differentLength).toEqual({ redirect: "/account?telegram=invalid" });
+
     const rows = await db.select().from(telegramLinks).where(eq(telegramLinks.userId, id));
     expect(rows).toHaveLength(0);
   });
