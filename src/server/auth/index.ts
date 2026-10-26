@@ -26,7 +26,7 @@ export async function createSession(userId: string) {
   const db = await getDb();
   const token = randomToken();
   const expiresAt = new Date(Date.now() + SESSION_DAYS * 86_400_000);
-  await db.insert(sessions).values({ id: sha256(token), userId, expiresAt });
+  await db.insert(sessions).values({ id: sha256(token), userId, expiresAt, source: "web" });
   const jar = await cookies();
   jar.set(SESSION_COOKIE, token, {
     httpOnly: true,
@@ -35,6 +35,14 @@ export async function createSession(userId: string) {
     path: "/",
     expires: expiresAt,
   });
+}
+
+export async function createTelegramSession(userId: string) {
+  const db = await getDb();
+  const token = randomToken();
+  const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000);
+  await db.insert(sessions).values({ id: sha256(token), userId, expiresAt, source: "telegram" });
+  return { token, expiresAt };
 }
 
 export async function destroySession() {
