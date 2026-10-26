@@ -14,6 +14,15 @@ export type TelegramLinkStateCookie = {
   secure: boolean;
 };
 
+const REUSABLE_STATE = /^[A-Za-z0-9_-]{20,200}$/;
+
+export function resolveTelegramLinkState(pathname: string, existing: string | null | undefined): { state: string; cookie: TelegramLinkStateCookie | null } | null {
+  if (pathname !== "/account") return null;
+  if (existing && REUSABLE_STATE.test(existing)) return { state: existing, cookie: null };
+  const issued = issueTelegramLinkState();
+  return { state: issued.state, cookie: issued.cookie };
+}
+
 export function issueTelegramLinkState(): { state: string; cookie: TelegramLinkStateCookie } {
   const state = randomToken();
   return {
