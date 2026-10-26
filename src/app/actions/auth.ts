@@ -74,12 +74,15 @@ export async function signupAction(_: FormState, form: FormData): Promise<FormSt
     passwordHash: await hashPassword(parsed.data.password),
     referredByUserId,
   });
-  await sendVerificationEmail(user);
   if (link) {
     const finished = await finishPendingTelegramSignup({ userId: user.id, pending: link });
-    if ("error" in finished) return { error: finished.error };
+    if ("error" in finished) {
+      await sendVerificationEmail(user);
+      return { error: finished.error };
+    }
     clearPendingTelegramCookie(jar);
   }
+  await sendVerificationEmail(user);
   await createSession(user.id);
   await identifyAttribution(user.id);
   await trackEvent("account_created", user.id);

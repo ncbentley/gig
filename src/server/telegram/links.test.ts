@@ -7,6 +7,7 @@ import {
   findActiveLinkByTelegramId,
   linkTelegram,
   revokeTelegramLink,
+  telegramLinkErrorFromDb,
 } from "./links";
 
 beforeAll(async () => {
@@ -176,5 +177,73 @@ describe("revokeTelegramLink and findActiveLinkByTelegramId", () => {
 
     const webSessions = await db.select().from(sessions).where(eq(sessions.id, webSessionId));
     expect(webSessions).toHaveLength(1);
+  });
+});
+
+describe("unique link insert races", () => {
+  async function caughtInsert(values: {
+    userId: string;
+    telegramUserId: string;
+    telegramUsername: string;
+  }) {
+    const db = await getDb();
+    try {
+      await db.insert(telegramLinks).values({ ...values, authDate: new Date(1_700_000_000_000) });
+      return null;
+    } catch (error) {
+      return error;
+    }
+  }
+
+  it("maps a telegram_links_active_telegram violation to telegram_taken", async () => {
+    const { userA, userB } = await createTestUsers();
+    const db = await getDb();
+    try {
+      await db.insert(telegramLinks).values({
+        userId: userA.id,
+        telegramUserId: "880880",
+        telegramUsername: "a",
+        authDate: new Date(1_700_000_000_000),
+      });
+      const error = await caughtInsert({
+        userId: userB.id,
+        telegramUserId: "880880",
+        telegramUsername: "b",
+      });
+      const cause = (error as { cause?: { code?: string; constraint?: string } }).cause;
+      expect(cause?.code).toBe("23505");
+      expect(cause?.constraint).toBe("telegram_links_active_telegram");
+      expect(telegramLinkErrorFromDb(error)).toMatchObject({ name: "TelegramLinkError", code: "telegram_taken" });
+    } finally {
+      await db.delete(users).where(eq(users.id, userA.id));
+      await db.delete(users).where(eq(users.id, userB.id));
+    }
+  });
+
+  it("maps a telegram_links_active_user violation to already_linked", async () => {
+    const { userA, userB } = await createTestUsers();
+    const db = await getDb();
+    try {
+      await db.insert(telegramLinks).values({
+        userId: userA.id,
+        telegramUserId: "881881",
+        telegramUsername: "a",
+        authDate: new Date(1_700_000_000_000),
+      });
+      const error = await caughtInsert({
+        userId: userA.id,
+        telegramUserId: "882882",
+        telegramUsername: "a2",
+      });
+      const cause = (error as { cause?: { code?: string; constraint?: string } }).cause;
+      expect(cause?.code).toBe("23505");
+      expect(cause?.constraint).toBe("telegram_links_active_user");
+      expect(telegramLinkErrorFromDb(error)).toMatchObject({ name: "TelegramLinkError", code: "already_linked" });
+      expect(telegramLinkErrorFromDb(new Error("nope"))).toBeNull();
+      expect(telegramLinkErrorFromDb({ cause: { code: "23505", constraint: "users_email_unique" } })).toBeNull();
+    } finally {
+      await db.delete(users).where(eq(users.id, userA.id));
+      await db.delete(users).where(eq(users.id, userB.id));
+    }
   });
 });

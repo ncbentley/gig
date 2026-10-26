@@ -9,6 +9,17 @@ export class TelegramLinkError extends Error {
   }
 }
 
+export function telegramLinkErrorFromDb(error: unknown): TelegramLinkError | null {
+  if (!error || typeof error !== "object" || !("cause" in error)) return null;
+  const cause = (error as { cause?: unknown }).cause;
+  if (!cause || typeof cause !== "object") return null;
+  const { code, constraint } = cause as { code?: unknown; constraint?: unknown };
+  if (code !== "23505") return null;
+  if (constraint === "telegram_links_active_telegram") return new TelegramLinkError("telegram_taken");
+  if (constraint === "telegram_links_active_user") return new TelegramLinkError("already_linked");
+  return null;
+}
+
 export async function findActiveLinkByTelegramId(telegramUserId: string) {
   const db = await getDb();
   const [row] = await db
@@ -41,16 +52,22 @@ export async function linkTelegram(input: {
       .where(eq(telegramLinks.id, own.id));
     return own.id;
   }
-  const [created] = await db
-    .insert(telegramLinks)
-    .values({
-      userId: input.userId,
-      telegramUserId: input.telegramUserId,
-      telegramUsername: input.username,
-      authDate: input.authDate,
-    })
-    .returning({ id: telegramLinks.id });
-  return created!.id;
+  try {
+    const [created] = await db
+      .insert(telegramLinks)
+      .values({
+        userId: input.userId,
+        telegramUserId: input.telegramUserId,
+        telegramUsername: input.username,
+        authDate: input.authDate,
+      })
+      .returning({ id: telegramLinks.id });
+    return created!.id;
+  } catch (error) {
+    const mapped = telegramLinkErrorFromDb(error);
+    if (mapped) throw mapped;
+    throw error;
+  }
 }
 
 export async function revokeTelegramLink(userId: string) {
