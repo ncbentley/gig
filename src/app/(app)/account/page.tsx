@@ -1,18 +1,31 @@
+import { and, eq, isNull } from "drizzle-orm";
 import { CalendarDays, Check, Crown, KeyRound, LogOut, Mail, ShieldCheck, UserRound } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { logoutAction } from "@/app/actions/auth";
+import { disconnectTelegramAction } from "@/app/actions/telegram-link";
 import { PageHeader } from "@/components/page-header";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { fmtDate, initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { requireUser } from "@/server/auth/guards";
+import { getDb } from "@/server/db";
+import { telegramLinks } from "@/server/db/schema";
 import { FEATURE_CATALOG, historyWindowLabel, TIER_LABEL } from "@/server/entitlements/config";
 import { appliedComplimentary } from "@/server/entitlements/complimentary";
 import { getViewer } from "@/server/entitlements/service";
 
 export const metadata: Metadata = { title: "My profile" };
+
+const TELEGRAM_NOTE: Record<string, string> = {
+  connected: "Telegram is connected.",
+  taken: "That Telegram account is already linked to another member.",
+  already: "This account is already linked to a different Telegram user.",
+  invalid: "That Telegram login could not be verified.",
+  unconfigured: "Telegram linking is not configured.",
+  disconnected: "Telegram has been disconnected.",
+};
 
 function Row({ icon: IconCmp, label, children }: { icon: React.ComponentType<{ className?: string }>; label: string; children: React.ReactNode }) {
   return (
@@ -24,8 +37,21 @@ function Row({ icon: IconCmp, label, children }: { icon: React.ComponentType<{ c
   );
 }
 
-export default async function AccountPage() {
+export default async function AccountPage({ searchParams }: PageProps<"/account">) {
   const user = await requireUser("/account");
+  const sp = await searchParams;
+  const telegramNote = typeof sp.telegram === "string" ? TELEGRAM_NOTE[sp.telegram] : undefined;
+  const botToken = process.env.TELEGRAM_LINK_BOT_TOKEN;
+  const botUsername = process.env.TELEGRAM_LINK_BOT_USERNAME;
+  const telegramReady = Boolean(botToken && botUsername);
+  const db = await getDb();
+  const [telegramLink] = telegramReady
+    ? await db
+        .select()
+        .from(telegramLinks)
+        .where(and(eq(telegramLinks.userId, user.id), isNull(telegramLinks.revokedAt)))
+        .limit(1)
+    : [];
   const { access, subscription, viewAs, complimentary } = await getViewer();
   const applied = user.role === "admin" ? null : appliedComplimentary(subscription?.tier ?? null, complimentary);
   const hasAccess = access.features.size > 0;
@@ -76,6 +102,36 @@ export default async function AccountPage() {
                   Sign out
                 </Button>
               </form>
+            </div>
+            <div className="mt-5 space-y-3">
+              {telegramNote ? (
+                <p role="status" className="text-sm text-foreground">
+                  {telegramNote}
+                </p>
+              ) : null}
+              {!botToken || !botUsername ? (
+                <p className="text-sm text-muted-foreground">Telegram linking is not available yet.</p>
+              ) : telegramLink ? (
+                <div className="flex flex-wrap items-center gap-3">
+                  <p className="text-sm font-medium">
+                    Connected to Telegram
+                    {telegramLink.telegramUsername ? ` @${telegramLink.telegramUsername}` : ""}
+                  </p>
+                  <form action={disconnectTelegramAction}>
+                    <Button type="submit" variant="outline" size="sm">
+                      Disconnect
+                    </Button>
+                  </form>
+                </div>
+              ) : (
+                <script
+                  async
+                  src="https://telegram.org/js/telegram-widget.js?22"
+                  data-telegram-login={botUsername}
+                  data-size="large"
+                  data-auth-url={`${process.env.APP_URL ?? ""}/api/telegram/link`}
+                />
+              )}
             </div>
             <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
               We never ask for brokerage credentials, account balances or positions. The product does not personalise information to your finances.
